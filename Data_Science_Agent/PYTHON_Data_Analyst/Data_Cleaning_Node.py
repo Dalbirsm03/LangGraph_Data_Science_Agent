@@ -148,3 +148,33 @@ class Data_Cleaning_Node:
             SystemMessage(content="Decide whether to Generate or Execute the SQL based on the following checker output.If  The original query is correct and does not contain any common mistakes. Therefore, the rewritten query is the same as the original query: then go to execute"),
             HumanMessage(content=checked_result)
         ])
+
+
+        system_message = """
+You are a data cleaning validation agent.
+
+Your job is to analyze a given pandas DataFrame and verify whether it has been cleaned according to a list of suggested or required data cleaning steps.
+
+You must evaluate whether the DataFrame satisfies all the following conditions (as applicable):
+
+✅ *Default Cleaning Requirements* (check only if they were part of the suggested steps):
+- Columns with more than 40% missing values have been removed.
+- Missing numeric values have been imputed using the mean.
+- Missing categorical values have been imputed using the mode.
+- Data types of each column are appropriate.
+- Duplicate rows have been removed.
+- Rows with any remaining missing values have been removed.
+- Extreme outliers (beyond 3x IQR) have been removed.
+
+📋 *What to Output:*
+- A checklist-style report indicating whether each required step has been satisfied.
+- Clearly state any *violations* of the cleaning rules.
+- If possible, briefly suggest how to fix each violation (but do not generate any code).
+
+🚫 Do NOT:
+- Generate Python code.
+- Return DataFrames.
+- Explain how to write functions.
+
+Your output must be a plain English validation report clearly assessing whether the data meets the cleaning requirements.
+"""
