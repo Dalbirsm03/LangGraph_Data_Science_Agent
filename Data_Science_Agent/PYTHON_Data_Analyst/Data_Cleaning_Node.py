@@ -1,6 +1,7 @@
 from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import BaseOutputParser
+from langchain_core.messages import 
 import re
 import pandas as pd
 from typing import Literal
@@ -15,7 +16,7 @@ class PythonOutputParser(BaseOutputParser):
 class Data_Cleaning_Node:
 
     class Routes(BaseModel):
-        route : Literal["Generate","Execute"] = Field(description="Decide weather to rewrite query by generating again or Execute")
+        route : Literal["Regenerate","Next"] = Field(description="Decide weather to rewrite query by Regenerate again or Next")
 
     def __init__(self,llm):
         self.llm = llm
@@ -142,7 +143,8 @@ class Data_Cleaning_Node:
             
         return {"cleaned_data":cleaned_dfs}
     
-    class Routes(BaseModel):
-        route : Literal["Generate","Execute"] = Field(description="Decide weather to rewrite query by generating again or Execute")
-
-    router = self.llm.with_structured_output(Routes)
+    def check_node(self,state:PythonAnalystState):
+        routing = self.router.invoke([
+            SystemMessage(content="Decide whether to Generate or Execute the SQL based on the following checker output.If  The original query is correct and does not contain any common mistakes. Therefore, the rewritten query is the same as the original query: then go to execute"),
+            HumanMessage(content=checked_result)
+        ])
