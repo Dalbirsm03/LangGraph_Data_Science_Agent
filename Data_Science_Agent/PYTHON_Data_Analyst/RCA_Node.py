@@ -1,37 +1,70 @@
-You are a senior data analyst tasked with conducting a **root cause analysis (RCA)** based on the user’s concern and the dataset insights below.
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
+import pandas as pd
+from typing import Dict
 
-📌 **User Issue/Question**: "{user_query}"
+def dynamic_sample(df: pd.DataFrame) -> pd.DataFrame:
+    n = len(df)
+    frac = 1.0 if n < 10_000 else 0.1 if n < 100_000 else 0.03 if n < 1_000_000 else 0.01
+    return df.sample(frac=frac, random_state=42)
 
-📊 **EDA Summary**:
-{eda_suggestion}
+class RCA_Node:
+    def __init__(self, llm):
+        self.llm = llm
 
----
+    def rca_node(self,state:PythonAnalystState):
+        prompt = PromptTemplate(
+            template="""
+        You are a senior data analyst tasked with performing **Root Cause and Recommendation Analysis (RCRA)**.
 
-🎯 **Your task**:
+        ---
 
-Analyze the EDA and identify:
-1. **What went wrong** or what patterns are concerning.
-2. **Why it happened** — isolate key variables, trends, outliers, groups, or time windows causing the issue.
-3. **Where** (segments, cohorts, geographies, time periods) the issue is most concentrated.
-4. **Hypotheses** explaining the deviation, supported by evidence from the data.
+        📌 **User Question/Concern**:  
+        "{user_query}"
 
-💡 Be specific:
-- Use statistics, comparisons, and proportions.
-- Avoid vague conclusions like "data is skewed" — explain what it's skewed towards and how it connects to the problem.
-- Link all findings back to the **original user issue**.
+        📊 **EDA Summary**:  
+        {eda_suggestion}
 
----
+        📄 **Cleaned Data Sample** (Markdown Table):  
+        {sampled_data}
 
-🧾 **Output Format** (Markdown):
-### 🧠 Root Cause Summary
-- Brief but sharp overview of the core cause(s).
+        ---
 
-### 🔍 Deep-Dive Analysis
-- List **3–5 drivers**, with data-backed reasoning.
+        🎯 **Your Task**:
 
-### 📌 Evidence Table (Optional)
-If applicable, add a markdown table summarizing:
-| Segment | Metric | Value | Comment |
-|---------|--------|-------|---------|
+        Step 1: Perform **Root Cause Analysis (RCA)**  
+        - Confirm if the user's concern is true using data.
+        - Identify the top 3–5 contributing factors behind the issue using trends, correlations, segments, or outliers.
+        - Highlight specific segments, time periods, and user groups most affected.
+        - Ensure all findings are directly connected to the user's question.
 
----
+        Step 2: Suggest **Actionable Recommendations**  
+        - Propose 2–3 specific, measurable, and realistic strategies to improve the situation (e.g., increase bicycle sales next month).
+        - Each recommendation must clearly relate to one or more identified root causes.
+
+        If any essential data is missing or limited, call it out.
+
+        ---
+
+        📤 **Output Format (Markdown)**:
+
+        ### 🧠 Root Cause Summary  
+        - Brief overview of the core issue and what’s driving it.
+
+        ### 🔍 Contributing Factors  
+        - Bullet list of data-driven causes (3–5)
+
+        ### 📌 Segment/Group Focus  
+        - Key timeframes, regions, demographics, or categories involved
+
+        ### ⚠️ Data Limitations  
+        - Mention if anything is missing that could affect accuracy
+
+        ### 📈 Actionable Recommendations  
+        - Bullet list of strategies to fix/improve the situation next cycle
+        """,
+            input_variables=["user_query", "eda_suggestion", "sampled_data"]
+        )
+        
+
