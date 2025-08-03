@@ -125,3 +125,55 @@ class EDA_Node:
             return "rca_suggestions"
         else:
             return "eda_suggestions"
+        
+
+    def eda_code(self, state: PythonAnalystState) -> dict:
+        """Generate Python code for EDA based on suggestions.
+
+        Args:
+            state: PythonAnalystState containing EDA suggestions and cleaned data
+            
+        Returns:
+            Dict containing generated EDA code
+        """
+        prompt = PromptTemplate(
+            template="""You are an EDA code generation agent.
+
+Your job is to generate a Python function based on the EDA steps provided by the user:
+
+{recommended_steps}
+
+The function must be valid and executable on a pandas DataFrame.
+
+---
+
+🔧 Requirements:
+- Use the sample below as the structure reference.
+- The function input should be a pandas DataFrame.
+- Return a dictionary of EDA results (stats, insights, etc.) as `eda_results`.
+- Include necessary imports *inside* the function.
+- Wrap code in triple backticks with `python`.
+
+---
+
+📋 Sample Structure:
+```python
+def perform_eda(df):
+    import pandas as pd
+    # ... your EDA code ...
+    return {"eda_results": results}
+```
+
+---
+
+Now, based on this structure, generate the function:
+""",
+            input_variables=["recommended_steps"],
+            partial_variables={"recommended_steps": state["eda_suggestion"]}
+        )
+
+        chain = prompt | self.llm | PythonOutputParser()
+        response = chain.invoke({"recommended_steps": state["eda_suggestion"]})
+
+        return {"generated_code": response}
+
