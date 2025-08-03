@@ -73,38 +73,38 @@ class EDA_Node:
                                     "cleaned_data" : column_summary})
         return {"visual_plan" : response}
     
-
-
-
-    You are a Python visualization engineer.
+    def visual_code(self, state: PythonAnalystState):
+        prompt = PromptTemplate(
+            template="""
+        You are a Python visualization engineer.
 
 Your task is to generate complete Python code for the suggested visualizations using the cleaned DataFrame and EDA context provided.
 
 ---
 
 📦 INPUTS:
-- `df` is the cleaned pandas DataFrame (assume it's already available)
+- df is the cleaned pandas DataFrame (assume it's already available)
 - EDA Summary: {eda_result}
 - Visualization Plan: {visual_suggestion}
 
 ---
 
-🛠️ INSTRUCTIONS:
-- Generate **a single function** called `generate_visualizations(df)`
+🛠 INSTRUCTIONS:
+- Generate *a single function* called generate_visualizations(df)
 - Include:
   - Necessary imports (inside the function only)
   - One block of code per chart (based on the plan)
   - Clear titles, axis labels, and proper styling
-  - Use `plt.show()` (or `fig.show()` for Plotly) to display each plot
+  - Use plt.show() (or fig.show() for Plotly) to display each plot
 - Use only the recommended libraries from the plan unless another is clearly more suitable
 - Do not return anything. Do not print. Just show charts.
 
 ---
 
-⚠️ RULES:
+⚠ RULES:
 - No hardcoded values outside the DataFrame.
-- Do **not** suggest or explain — only return Python code.
-- Code must be **immediately executable** and contain **no placeholders**.
+- Do *not* suggest or explain — only return Python code.
+- Code must be *immediately executable* and contain *no placeholders*.
 - You can assume all required libraries are installed.
 
 ---
@@ -123,4 +123,15 @@ def generate_visualizations(df):
 
     # Chart 2: Title
     ...
-    plt.show()
+    plt.show()""",
+            input_variables=["recommended_steps"],
+        )
+        
+        chain = prompt | self.llm | PythonOutputParser()
+
+        response = chain.invoke({"recommended_steps": state["visual_plan"]})
+
+        return {"visual_code": response}
+
+
+   
