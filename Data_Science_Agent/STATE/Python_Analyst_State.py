@@ -17,6 +17,8 @@ class PythonAnalystState(TypedDict):
     is_eda_valid: bool
     eda_recheck_suggestions : str
 
+    rca_suggestion: str
+
     visual_plan: str
     visual_code: str
     visual_output: Any

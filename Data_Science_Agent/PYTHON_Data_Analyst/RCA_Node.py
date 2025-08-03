@@ -64,7 +64,17 @@ class RCA_Node:
         ### 📈 Actionable Recommendations  
         - Bullet list of strategies to fix/improve the situation next cycle
         """,
-            input_variables=["user_query", "eda_suggestion", "sampled_data"]
-        )
+            input_variables=["user_query", "eda_suggestion", "sampled_data"])
+        
+        chain = prompt | self.llm | StrOutputParser()
+
+
+        response = chain.invoke({"user_query" : state["question"],
+                                 "eda_suggestion" : state["eda_suggestion"],
+                                 "sampled_data" : dynamic_sample(state["cleaned_data"]).to_mark})
+        return {"rca_suggestion" : response}
+
+                                 
+        
         
 
