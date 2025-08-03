@@ -1,7 +1,7 @@
 from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import BaseOutputParser
-from langchain_core.messages import 
+from langchain_core.messages import SystemMessage , HumanMessage
 import re
 import pandas as pd
 from typing import Literal
@@ -143,38 +143,50 @@ class Data_Cleaning_Node:
             
         return {"cleaned_data":cleaned_dfs}
     
-    def check_node(self,state:PythonAnalystState):
-        routing = self.router.invoke([
-            SystemMessage(content="Decide whether to Generate or Execute the SQL based on the following checker output.If  The original query is correct and does not contain any common mistakes. Therefore, the rewritten query is the same as the original query: then go to execute"),
-            HumanMessage(content=checked_result)
-        ])
+
+    def check_node(self, state: PythonAnalystState):
+        prompt = PromptTemplate(
+        template="""
+    You are a data cleaning validation agent.
+
+    Your job is to analyze a given pandas DataFrame and verify whether it has been cleaned according to a list of suggestions or required data cleaning steps.
+
+    You must evaluate whether the DataFrame satisfies all the following conditions (as applicable):
+    - Columns with >40% missing values have been removed.
+    - Missing numeric values imputed with mean.
+    - Missing categorical values imputed with mode.
+    - Appropriate column data types.
+    - Duplicates removed.
+    - Rows with missing values removed.
+    - Outliers removed using 3x IQR.
+
+    📋 Output a checklist report in English.
+
+    🧾 Cleaned Data:
+    {cleaned_data}
+
+    🧠 Suggestions:
+    {suggestions}
+    """,
+            input_variables=["cleaned_data", "suggestions"]
+        )
+        sample_parts = []
+        for i, df in enumerate(state["cleaned_data"]):
+            if isinstance(df, pd.DataFrame):
+                sample_df = df.head(15)
+                sample_parts.append(f"File {i + 1} Cleaned Sample:\n{sample_df.to_string(index=False)}")
+        sample_text = "\n\n".join(sample_parts)
+        prompt_filled = prompt.format(
+            cleaned_data=sample_text,
+            suggestions=state["cleaning_suggestion"]
+        )
 
 
-        system_message = """
-You are a data cleaning validation agent.
+        result = self.router.invoke(prompt_filled)
+        return {"is_clean" : result.route}
+    
 
-Your job is to analyze a given pandas DataFrame and verify whether it has been cleaned according to a list of suggested or required data cleaning steps.
-
-You must evaluate whether the DataFrame satisfies all the following conditions (as applicable):
-
-✅ *Default Cleaning Requirements* (check only if they were part of the suggested steps):
-- Columns with more than 40% missing values have been removed.
-- Missing numeric values have been imputed using the mean.
-- Missing categorical values have been imputed using the mode.
-- Data types of each column are appropriate.
-- Duplicate rows have been removed.
-- Rows with any remaining missing values have been removed.
-- Extreme outliers (beyond 3x IQR) have been removed.
-
-📋 *What to Output:*
-- A checklist-style report indicating whether each required step has been satisfied.
-- Clearly state any *violations* of the cleaning rules.
-- If possible, briefly suggest how to fix each violation (but do not generate any code).
-
-🚫 Do NOT:
-- Generate Python code.
-- Return DataFrames.
-- Explain how to write functions.
-
-Your output must be a plain English validation report clearly assessing whether the data meets the cleaning requirements.
-"""
+    def next_route(self, state: PythonAnalystState):
+        if state["is_clean"].lower() == "Regenerate":
+            return "cleaning_suggestions"
+        return "Next"

@@ -9,7 +9,7 @@ class PythonAnalystState(TypedDict):
     cleaning_suggestion: str
     cleaning_code: str
     cleaned_data: List[pd.DataFrame]
-    is_clean: bool
+    is_clean: str
 
     eda_suggestion : str
     eda_code: str
