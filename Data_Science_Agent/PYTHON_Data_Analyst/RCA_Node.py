@@ -71,7 +71,7 @@ class RCA_Node:
 
         response = chain.invoke({"user_query" : state["question"],
                                  "eda_suggestion" : state["eda_suggestion"],
-                                 "sampled_data" : dynamic_sample(state["cleaned_data"]).to_mark})
+                                 "sampled_data" : dynamic_sample(state["cleaned_data"]).to_markdown(index=False)})
         return {"rca_suggestion" : response}
 
                                  
