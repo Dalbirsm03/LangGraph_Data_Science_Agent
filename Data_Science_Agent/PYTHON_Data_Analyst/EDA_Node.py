@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser, BaseOutputParser,JsonOutputParser
 from langchain_core.messages import SystemMessage , HumanMessage
 import re
+import logging
 import pandas as pd
 from typing import Literal
 from pydantic import BaseModel, Field 
@@ -20,12 +21,9 @@ class PythonOutputParser(BaseOutputParser):
     
 class EDA_Node:
 
-    class Routes(BaseModel):
-        route : Literal["True","False"] = Field(description="Decide weather to rewrite query by True or False")
 
     def __init__(self,llm):
             self.llm=llm
-            self.router = self.llm.with_structured_output(self.Routes)
 
 
     def eda_suggestions(self, state: PythonAnalystState) -> dict:
@@ -128,52 +126,67 @@ class EDA_Node:
         
 
     def eda_code(self, state: PythonAnalystState) -> dict:
-        """Generate Python code for EDA based on suggestions.
-
-        Args:
-            state: PythonAnalystState containing EDA suggestions and cleaned data
-            
-        Returns:
-            Dict containing generated EDA code
-        """
         prompt = PromptTemplate(
-            template="""You are an EDA code generation agent.
+            template="""
+        You are a code generator. Convert the EDA steps below into one executable Python function.
 
-Your job is to generate a Python function based on the EDA steps provided by the user:
+        {recommended_steps}
 
-{recommended_steps}
+        ---
 
-The function must be valid and executable on a pandas DataFrame.
+        ⚠️ RULES:
+        - One function: `perform_eda(df)`
+        - Input: a pandas DataFrame
+        - No visuals, plots, or display logic
+        - No print statements
+        - All imports (pandas, numpy, etc.) must be inside the function
+        - Return a dictionary named `eda_results`
+        - Wrap the full function in triple backticks using `python`
 
----
+        ---
 
-🔧 Requirements:
-- Use the sample below as the structure reference.
-- The function input should be a pandas DataFrame.
-- Return a dictionary of EDA results (stats, insights, etc.) as `eda_results`.
-- Include necessary imports *inside* the function.
-- Wrap code in triple backticks with `python`.
-
----
-
-📋 Sample Structure:
-```python
-def perform_eda(df):
-    import pandas as pd
-    # ... your EDA code ...
-    return {"eda_results": results}
-```
-
----
-
-Now, based on this structure, generate the function:
-""",
+        📦 FORMAT:
+        ```python
+        def perform_eda(df):
+            import pandas as pd
+            eda_results = {
+                "shape": df.shape,
+                # other EDA outputs...
+            }
+            return eda_results
+            ```
+            """,
             input_variables=["recommended_steps"],
-            partial_variables={"recommended_steps": state["eda_suggestion"]}
         )
 
         chain = prompt | self.llm | PythonOutputParser()
         response = chain.invoke({"recommended_steps": state["eda_suggestion"]})
+        return {"eda_code": response}
+    
 
-        return {"generated_code": response}
+    def execute_eda_code(self, state: PythonAnalystState) -> dict:
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
 
+        eda_dfs = []
+        code = state["eda_code"]
+
+        for i, df in enumerate(state["raw_data"]):
+            if not isinstance(df, pd.DataFrame):
+                logger.warning("Item %d in raw_data is not a DataFrame, skipping...", i + 1)
+                continue
+
+            local_vars = {"df": df.copy()}
+            try:
+                exec(code, {}, local_vars)
+                eda_func = next((val for val in local_vars.values() if callable(val)), None)
+                if eda_func is None:
+                    raise ValueError("No EDA function found in code")
+                result = eda_func(local_vars["df"])
+                eda_dfs.append(result)
+                logger.info("Successfully ran EDA on DataFrame %d", i + 1)
+            except Exception as e:
+                logger.error("EDA execution failed on DataFrame %d: %s", i + 1, str(e))
+                eda_dfs.append({"error": str(e)})
+
+        return {"eda_result": eda_dfs[0] if eda_dfs else {}}
