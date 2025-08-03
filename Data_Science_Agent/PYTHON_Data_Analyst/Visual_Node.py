@@ -72,3 +72,55 @@ class EDA_Node:
                                     "rca_result" : state['rca_suggestion'],
                                     "cleaned_data" : column_summary})
         return {"visual_plan" : response}
+    
+
+
+
+    You are a Python visualization engineer.
+
+Your task is to generate complete Python code for the suggested visualizations using the cleaned DataFrame and EDA context provided.
+
+---
+
+📦 INPUTS:
+- `df` is the cleaned pandas DataFrame (assume it's already available)
+- EDA Summary: {eda_result}
+- Visualization Plan: {visual_suggestion}
+
+---
+
+🛠️ INSTRUCTIONS:
+- Generate **a single function** called `generate_visualizations(df)`
+- Include:
+  - Necessary imports (inside the function only)
+  - One block of code per chart (based on the plan)
+  - Clear titles, axis labels, and proper styling
+  - Use `plt.show()` (or `fig.show()` for Plotly) to display each plot
+- Use only the recommended libraries from the plan unless another is clearly more suitable
+- Do not return anything. Do not print. Just show charts.
+
+---
+
+⚠️ RULES:
+- No hardcoded values outside the DataFrame.
+- Do **not** suggest or explain — only return Python code.
+- Code must be **immediately executable** and contain **no placeholders**.
+- You can assume all required libraries are installed.
+
+---
+
+📦 OUTPUT FORMAT:
+```python
+def generate_visualizations(df):
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    # import plotly.express as px  # Only if a chart needs Plotly
+
+    # Chart 1: Title
+    ...
+    plt.show()
+
+    # Chart 2: Title
+    ...
+    plt.show()
