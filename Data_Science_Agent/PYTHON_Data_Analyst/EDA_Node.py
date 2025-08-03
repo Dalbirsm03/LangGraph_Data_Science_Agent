@@ -20,8 +20,13 @@ class PythonOutputParser(BaseOutputParser):
     
 class EDA_Node:
 
+    class Routes(BaseModel):
+        route : Literal["True","False"] = Field(description="Decide weather to rewrite query by True or False")
+
     def __init__(self,llm):
             self.llm=llm
+            self.router = self.llm.with_structured_output(self.Routes)
+
 
     def eda_suggestions(self, state: PythonAnalystState) -> dict:
         
@@ -100,7 +105,7 @@ class EDA_Node:
         ---
         🧾 **Output (JSON)**:
         {{
-        "is_eda_valid": true/false,
+        "is_eda_valid": True / False (Give strictly Boolean value only),
         "missing_points": ["...", "..."],
         "reasoning": "Direct, sharp explanation (no fluff)."
         }}
@@ -114,7 +119,6 @@ class EDA_Node:
                     "is_eda_valid": response["is_eda_valid"],
                     "eda_recheck_suggestions": response
                 }
-    
     
     def next_route(self, state: PythonAnalystState):
         if state["is_eda_valid"] == True:
