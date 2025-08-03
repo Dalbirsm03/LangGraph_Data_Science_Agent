@@ -22,8 +22,15 @@ class Data_Cleaning_Node:
         self.llm = llm
         self.router = self.llm.with_structured_output(self.Routes)
     
-    def cleaning_suggestions(self , state: PythonAnalystState):
-
+    def cleaning_suggestions(self, state: PythonAnalystState) -> dict:
+        """Generate cleaning suggestions based on the data and user query.
+        
+        Args:
+            state: PythonAnalystState containing raw data and user question
+            
+        Returns:
+            Dict containing cleaning suggestions
+        """
         system_message = """
         You are a data cleaning suggestion agent.
 
@@ -79,7 +86,15 @@ class Data_Cleaning_Node:
         return {"cleaning_suggestion" : result}
     
     
-    def cleaning_code(self, state: PythonAnalystState):
+    def cleaning_code(self, state: PythonAnalystState) -> dict:
+        """Generate Python code for data cleaning based on suggestions.
+        
+        Args:
+            state: PythonAnalystState containing cleaning suggestions and raw data
+            
+        Returns:
+            Dict containing generated cleaning code
+        """
         prompt = PromptTemplate(
             template="""You are a data cleaning code generation agent.
 
@@ -121,30 +136,70 @@ class Data_Cleaning_Node:
         return {"cleaning_code":response}
     
     
-    def cleaning_executor(self, state: PythonAnalystState):
+    def cleaning_executor(self, state: PythonAnalystState) -> dict:
+        """Execute cleaning code on each DataFrame in the state.
+        
+        Args:
+            state: PythonAnalystState containing raw data and cleaning code
+            
+        Returns:
+            Dict containing list of cleaned DataFrames
+        """
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        
         cleaned_dfs = []
+        code = state["cleaning_code"]
 
         for i, df in enumerate(state["raw_data"]):
+            if not isinstance(df, pd.DataFrame):
+                logger.warning("Item %(idx)s in raw_data is not a DataFrame, skipping...", 
+                             {"idx": i + 1})
+                continue
+                
             local_vars = {"df": df.copy()}
-            code = state["cleaning_code"]
-
-            try:
-                    exec(code, {}, local_vars)
-
-                    for val in local_vars.values():
-                        if callable(val):
-                            cleaned = val(local_vars["df"])
-                            cleaned_dfs.append(cleaned)
-                            break
-            except Exception as e:
-                    print(f"Error cleaning file {i + 1}: {e}")
-                    cleaned_dfs.append(df)
-
             
-        return {"cleaned_data":cleaned_dfs}
+            try:
+                # Execute the cleaning code
+                exec(code, {}, local_vars)
+                
+                # Find and execute the cleaning function
+                cleaning_func = None
+                for val in local_vars.values():
+                    if callable(val):
+                        cleaning_func = val
+                        break
+                        
+                if cleaning_func is None:
+                    raise ValueError("No callable function found in the cleaning code")
+                    
+                cleaned = cleaning_func(local_vars["df"])
+                if not isinstance(cleaned, pd.DataFrame):
+                    raise ValueError("Cleaning function did not return a DataFrame")
+                    
+                cleaned_dfs.append(cleaned)
+                logger.info("Successfully cleaned DataFrame %(idx)s", {"idx": i + 1})
+                
+            except Exception as e:
+                logger.error("Error cleaning DataFrame %(idx)s: %(error)s", 
+                           {"idx": i + 1, "error": str(e)})
+                logger.info("Using original DataFrame %(idx)s due to cleaning error", 
+                          {"idx": i + 1})
+                cleaned_dfs.append(df)
+            
+        return {"cleaned_data": cleaned_dfs}
     
 
-    def check_node(self, state: PythonAnalystState):
+    def check_node(self, state: PythonAnalystState) -> dict:
+        """Validate the cleaning results against the original suggestions.
+        
+        Args:
+            state: PythonAnalystState containing cleaned data and original suggestions
+            
+        Returns:
+            Dict containing validation result (is_clean)
+        """
         prompt = PromptTemplate(
         template="""
     You are a data cleaning validation agent.
@@ -186,7 +241,15 @@ class Data_Cleaning_Node:
         return {"is_clean" : result.route}
     
 
-    def next_route(self, state: PythonAnalystState):
+    def next_route(self, state: PythonAnalystState) -> str:
+        """Determine the next step in the cleaning pipeline.
+        
+        Args:
+            state: PythonAnalystState containing cleaning validation result
+            
+        Returns:
+            String indicating next route ("cleaning_suggestions" or "Next")
+        """
         if state["is_clean"].lower() == "Regenerate":
             return "cleaning_suggestions"
         return "Next"
