@@ -2,19 +2,30 @@ from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser, BaseOutputParser,JsonOutputParser
 import re
-
+import pandas as pd
+import matplotlib.pyplot as plt
+import tempfile
+import os
+import uuid
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class PythonOutputParser(BaseOutputParser):
-    def parse(self, text: str):
+    """Parser for extracting Python code from markdown code blocks."""
+    
+    def parse(self, text: str) -> str:
         match = re.search(r"```python(.*?)```", text, re.DOTALL)
         return match.group(1).strip() if match else text
     
-class EDA_Node:
+class Visual_Node:
+    """Node for handling data visualization tasks."""
+    
+    def __init__(self, llm) -> None:
+        self.llm = llm
 
-    def __init__(self,llm):
-            self.llm=llm
+    def visual_suggestions(self, state: PythonAnalystState) -> dict:
 
-    def visual_suggetsions(self,state :PythonAnalystState):
         prompt = PromptTemplate(
             template="""
         You are an elite data visualization strategist. Your task is to design only the most critical visualizations to help answer the user’s original question based on data.
@@ -60,7 +71,7 @@ class EDA_Node:
         - Visuals must be based strictly on the EDA and RCA findings.
         ---
         """,
-            input_variables=["user_query","cleaned_data" "eda_result", "rca_result"]
+            input_variables=["user_query","cleaned_data" ,"eda_result", "rca_result"]
         )
         chain = prompt | self.llm | StrOutputParser()
         column_summary = "\n".join(
@@ -73,7 +84,10 @@ class EDA_Node:
                                     "cleaned_data" : column_summary})
         return {"visual_plan" : response}
     
-    def visual_code(self, state: PythonAnalystState):
+    def visual_code(self, state: PythonAnalystState) -> dict:
+        if "visual_plan" not in state:
+            raise KeyError("Visual plan not found in state")
+            
         prompt = PromptTemplate(
             template="""
     You are a Python visualization engineer.
@@ -127,5 +141,61 @@ class EDA_Node:
         response = chain.invoke({"visual_suggestion": state["visual_plan"]})
         return {"visual_code": response}
 
+    def execute_visual_code(self, state: PythonAnalystState) -> dict:
+        code = state.get("visual_code")
+        if not code:
+            raise ValueError("No visualization code found in state")
+            
+        cleaned_dfs = state.get("cleaned_data", [])
+        if not cleaned_dfs:
+            raise ValueError("No cleaned data found in state")
+            
+        image_paths = []
 
-   
+        for idx, df in enumerate(cleaned_dfs):
+            if not isinstance(df, pd.DataFrame):
+                logger.warning("Item %(idx)s in cleaned_data is not a DataFrame. Skipping.", 
+                             {"idx": idx + 1})
+                continue
+
+            local_vars = {"df": df.copy()}
+            original_show = plt.show
+
+            def save_and_track():
+                """Save current plot to a temporary file and track its path."""
+                try:
+                    temp_file = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.png")
+                    plt.savefig(temp_file, bbox_inches="tight", dpi=300)
+                    plt.close("all")
+                    
+                    # Verify the file was created successfully
+                    if not os.path.exists(temp_file):
+                        raise IOError("Failed to create image file")
+                        
+                    image_paths.append(temp_file)
+                    logger.info("Successfully saved visualization to %(path)s", {"path": temp_file})
+                    
+                except (IOError, ValueError) as e:
+                    logger.error("Failed to save image: %(error)s", {"error": str(e)})
+                    image_paths.append({"error": f"Failed to save image: {str(e)}"})
+                except Exception as e:
+                    logger.error("Unexpected error while saving image: %(error)s", {"error": str(e)})
+                    image_paths.append({"error": f"Unexpected error: {str(e)}"})
+
+            try:
+                exec(code, {}, local_vars)
+                generate_func = next((val for val in local_vars.values() if callable(val)), None)
+                if generate_func is None:
+                    raise ValueError("No function found in generated code.")
+
+                # Patch show to save plots
+                plt.show = save_and_track
+                generate_func(df)
+
+            except Exception as e:
+                logger.error(f"Error executing visualization on DataFrame {idx + 1}: {e}")
+                image_paths.append({"error": str(e)})
+            finally:
+                plt.show = original_show
+
+        return {"visual_images": image_paths}

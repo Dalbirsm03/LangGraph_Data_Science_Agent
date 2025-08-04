@@ -7,23 +7,33 @@ import logging
 import pandas as pd
 from typing import Literal
 from pydantic import BaseModel, Field 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-def dynamic_sample(df: pd.DataFrame) -> pd.DataFrame:
+def dynamic_sample(df: pd.DataFrame, random_state: int = 42) -> pd.DataFrame:
     n = len(df)
     frac = 1.0 if n < 10_000 else 0.1 if n < 100_000 else 0.03 if n < 1_000_000 else 0.01
-    return df.sample(frac=frac, random_state=42)
+    return df.sample(frac=frac, random_state=random_state)
 
 class PythonOutputParser(BaseOutputParser):
-    def parse(self, text: str):
+    """Parser for extracting Python code from markdown code blocks."""
+    
+    def parse(self, text: str) -> str:
         match = re.search(r"```python(.*?)```", text, re.DOTALL)
         return match.group(1).strip() if match else text
     
 class EDA_Node:
+    """Node for performing Exploratory Data Analysis (EDA) operations."""
 
-
-    def __init__(self,llm):
-            self.llm=llm
+    def __init__(self, llm) -> None:
+        """Initialize EDA Node.
+        
+        Args:
+            llm: Language model for generating EDA suggestions and code
+        """
+        self.llm = llm
+        self.logger = logging.getLogger(__name__)
 
 
     def eda_suggestions(self, state: PythonAnalystState) -> dict:
@@ -79,7 +89,13 @@ class EDA_Node:
         return{"eda_suggestion" : response}
     
 
-    def eda_checking(self, state : PythonAnalystState):
+    def eda_checking(self, state: PythonAnalystState) -> dict:
+        if "eda_result" not in state:
+            raise ValueError("EDA result not found in state")
+            
+        if "question" not in state:
+            raise ValueError("User question not found in state")
+            
         prompt = PromptTemplate.from_template(template="""
         You are a senior data analyst auditing this EDA result:
         ---
@@ -118,14 +134,18 @@ class EDA_Node:
                     "eda_recheck_suggestions": response
                 }
     
-    def next_route(self, state: PythonAnalystState):
-        if state["is_eda_valid"] == True:
-            return "rca_suggestions"
-        else:
-            return "eda_suggestions"
+    def next_route(self, state: PythonAnalystState) -> str:
+        if "is_eda_valid" not in state:
+            raise ValueError("EDA validation result not found in state")
+            
+        return "rca_suggestions" if state["is_eda_valid"] else "eda_suggestions"
         
 
     def eda_code(self, state: PythonAnalystState) -> dict:
+
+        if "eda_suggestion" not in state:
+            raise ValueError("EDA suggestions not found in state")
+            
         prompt = PromptTemplate(
             template="""
         You are a code generator. Convert the EDA steps below into one executable Python function.
@@ -165,28 +185,56 @@ class EDA_Node:
     
 
     def execute_eda_code(self, state: PythonAnalystState) -> dict:
-        logging.basicConfig(level=logging.INFO)
-        logger = logging.getLogger(__name__)
+        if "eda_code" not in state:
+            raise ValueError("EDA code not found in state")
+            
+        if "raw_data" not in state:
+            raise ValueError("Raw data not found in state")
 
         eda_dfs = []
         code = state["eda_code"]
 
         for i, df in enumerate(state["raw_data"]):
             if not isinstance(df, pd.DataFrame):
-                logger.warning("Item %d in raw_data is not a DataFrame, skipping...", i + 1)
+                self.logger.warning(
+                    "Item %(idx)s in raw_data is not a DataFrame, skipping...",
+                    {"idx": i + 1}
+                )
                 continue
 
             local_vars = {"df": df.copy()}
             try:
-                exec(code, {}, local_vars)
+                # Execute the EDA code in a safe environment
+                exec(code, {"pd": pd}, local_vars)
+                
+                # Find and validate the EDA function
                 eda_func = next((val for val in local_vars.values() if callable(val)), None)
                 if eda_func is None:
-                    raise ValueError("No EDA function found in code")
+                    raise ValueError("No EDA function found in generated code")
+                
+                # Execute the EDA function and validate result
                 result = eda_func(local_vars["df"])
+                if not isinstance(result, dict):
+                    raise ValueError("EDA function must return a dictionary")
+                    
                 eda_dfs.append(result)
-                logger.info("Successfully ran EDA on DataFrame %d", i + 1)
+                self.logger.info(
+                    "Successfully ran EDA on DataFrame %(idx)s",
+                    {"idx": i + 1}
+                )
+                
+            except ValueError as ve:
+                self.logger.error(
+                    "Validation error on DataFrame %(idx)s: %(error)s",
+                    {"idx": i + 1, "error": str(ve)}
+                )
+                eda_dfs.append({"error": str(ve)})
+                
             except Exception as e:
-                logger.error("EDA execution failed on DataFrame %d: %s", i + 1, str(e))
+                self.logger.error(
+                    "EDA execution failed on DataFrame %(idx)s: %(error)s",
+                    {"idx": i + 1, "error": str(e)}
+                )
                 eda_dfs.append({"error": str(e)})
 
         return {"eda_result": eda_dfs}
