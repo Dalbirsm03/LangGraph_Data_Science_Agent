@@ -89,56 +89,6 @@ class EDA_Node:
         return{"eda_suggestion" : response}
     
 
-    def eda_checking(self, state: PythonAnalystState) -> dict:
-        if "eda_result" not in state:
-            raise ValueError("EDA result not found in state")
-            
-        if "question" not in state:
-            raise ValueError("User question not found in state")
-            
-        prompt = PromptTemplate.from_template(template="""
-        You are a senior data analyst auditing this EDA result:
-        ---
-        📌 **User Question**: "{question}"
-        📊 **EDA Result**:
-        {eda_result}
-        ---
-        ✅ **Checklist**:
-        - Basic structure (rows, columns, dtypes)
-        - Nulls, outliers, and distributions
-        - Summary stats for numerics
-        - Top categories for categoricals
-        - Key correlations or trends
-        - Relevant to the user’s query
-        ---
-        🎯 **Task**:
-        Evaluate the EDA critically.
-        - Is it complete and useful?
-        - Does it help answer the user’s intent?
-        - What’s missing, if anything?
-        ---
-        🧾 **Output (JSON)**:
-        {{
-        "is_eda_valid": True / False (Give strictly Boolean value only),
-        "missing_points": ["...", "..."],
-        "reasoning": "Direct, sharp explanation (no fluff)."
-        }}
-        """,
-        input_variables=["question", "eda_result"])
-
-        chain = prompt | self.llm | JsonOutputParser()
-        response = chain.invoke({"eda_result":state["eda_result"],
-                                 "question":state["question"]})
-        return {
-                    "is_eda_valid": response["is_eda_valid"],
-                    "eda_recheck_suggestions": response
-                }
-    
-    def next_route(self, state: PythonAnalystState) -> str:
-        if "is_eda_valid" not in state:
-            raise ValueError("EDA validation result not found in state")
-            
-        return "rca_suggestions" if state["is_eda_valid"] else "eda_suggestions"
         
 
     def eda_code(self, state: PythonAnalystState) -> dict:
@@ -238,3 +188,54 @@ class EDA_Node:
                 eda_dfs.append({"error": str(e)})
 
         return {"eda_result": eda_dfs}
+    
+    def eda_checking(self, state: PythonAnalystState) -> dict:
+        if "eda_result" not in state:
+            raise ValueError("EDA result not found in state")
+            
+        if "question" not in state:
+            raise ValueError("User question not found in state")
+            
+        prompt = PromptTemplate.from_template(template="""
+        You are a senior data analyst auditing this EDA result:
+        ---
+        📌 **User Question**: "{question}"
+        📊 **EDA Result**:
+        {eda_result}
+        ---
+        ✅ **Checklist**:
+        - Basic structure (rows, columns, dtypes)
+        - Nulls, outliers, and distributions
+        - Summary stats for numerics
+        - Top categories for categoricals
+        - Key correlations or trends
+        - Relevant to the user’s query
+        ---
+        🎯 **Task**:
+        Evaluate the EDA critically.
+        - Is it complete and useful?
+        - Does it help answer the user’s intent?
+        - What’s missing, if anything?
+        ---
+        🧾 **Output (JSON)**:
+        {{
+        "is_eda_valid": True / False (Give strictly Boolean value only),
+        "missing_points": ["...", "..."],
+        "reasoning": "Direct, sharp explanation (no fluff)."
+        }}
+        """,
+        input_variables=["question", "eda_result"])
+
+        chain = prompt | self.llm | JsonOutputParser()
+        response = chain.invoke({"eda_result":state["eda_result"],
+                                 "question":state["question"]})
+        return {
+                    "is_eda_valid": response["is_eda_valid"],
+                    "eda_recheck_suggestions": response
+                }
+    
+    def next_route(self, state: PythonAnalystState) -> str:
+        if "is_eda_valid" not in state:
+            raise ValueError("EDA validation result not found in state")
+            
+        return "rca_suggestions" if state["is_eda_valid"] else "eda_suggestions"

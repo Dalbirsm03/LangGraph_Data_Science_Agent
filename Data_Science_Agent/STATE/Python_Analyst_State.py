@@ -9,7 +9,8 @@ class PythonAnalystState(TypedDict):
     cleaning_suggestion: str
     cleaning_code: str
     cleaned_data: List[pd.DataFrame]
-    is_clean: str
+    cleaning_recheck_suggestions : str
+    is_clean: bool
 
     eda_suggestion : str
     eda_code: str
@@ -17,6 +18,7 @@ class PythonAnalystState(TypedDict):
     is_eda_valid: bool
     eda_recheck_suggestions : str
     eda_report_path : str
+
     rca_suggestion: str
 
     visual_plan: str
