@@ -76,61 +76,55 @@ class EDA_Node:
     def visual_code(self, state: PythonAnalystState):
         prompt = PromptTemplate(
             template="""
-        You are a Python visualization engineer.
+    You are a Python visualization engineer.
 
-Your task is to generate complete Python code for the suggested visualizations using the cleaned DataFrame and EDA context provided.
+    Your job is to generate clean, executable Python code for the approved visualizations.
+    ---
+    ### 📦 Input:
+    Below is the list of charts you must implement:
+    {visual_suggestion}
+    ---
+    ### 🛠 Instructions:
+    - Create a single function: `generate_visualizations(df)`
+    - `df` is the cleaned pandas DataFrame (assumed available)
+    - Place all required imports inside the function
+    - For each visualization in the plan:
+    - Use correct chart type
+    - Include proper title and axis labels
+    - Call `plt.show()` (or `fig.show()` for Plotly) to display each chart
+    ---
+    ### ⚠ Rules:
+    - No print(), no return(), no placeholders
+    - No markdown, no comments, no explanation
+    - No hardcoded values — use only the `df` content
+    - Code must be ready to run immediately
+    ---
+    ### 📤 Output Format:
+    Generate the exact number of charts as in the plan. Wrap your full code like this:
+    ```python
+    def generate_visualizations(df):
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        # import plotly.express as px  # only if required
 
----
+        # Chart 1
+        ...
+        plt.show()
 
-📦 INPUTS:
-- df is the cleaned pandas DataFrame (assume it's already available)
-- EDA Summary: {eda_result}
-- Visualization Plan: {visual_suggestion}
+        # Chart 2
+        ...
+        plt.show()
 
----
-
-🛠 INSTRUCTIONS:
-- Generate *a single function* called generate_visualizations(df)
-- Include:
-  - Necessary imports (inside the function only)
-  - One block of code per chart (based on the plan)
-  - Clear titles, axis labels, and proper styling
-  - Use plt.show() (or fig.show() for Plotly) to display each plot
-- Use only the recommended libraries from the plan unless another is clearly more suitable
-- Do not return anything. Do not print. Just show charts.
-
----
-
-⚠ RULES:
-- No hardcoded values outside the DataFrame.
-- Do *not* suggest or explain — only return Python code.
-- Code must be *immediately executable* and contain *no placeholders*.
-- You can assume all required libraries are installed.
-
----
-
-📦 OUTPUT FORMAT:
-```python
-def generate_visualizations(df):
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    # import plotly.express as px  # Only if a chart needs Plotly
-
-    # Chart 1: Title
-    ...
-    plt.show()
-
-    # Chart 2: Title
-    ...
-    plt.show()""",
-            input_variables=["recommended_steps"],
+        # Chart N (if applicable)
+        ...
+        plt.show()
+    """,
+        input_variables=["visual_suggestion"],
         )
-        
+
         chain = prompt | self.llm | PythonOutputParser()
-
-        response = chain.invoke({"recommended_steps": state["visual_plan"]})
-
+        response = chain.invoke({"visual_suggestion": state["visual_plan"]})
         return {"visual_code": response}
 
 

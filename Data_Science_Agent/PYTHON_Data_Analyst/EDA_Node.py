@@ -189,4 +189,4 @@ class EDA_Node:
                 logger.error("EDA execution failed on DataFrame %d: %s", i + 1, str(e))
                 eda_dfs.append({"error": str(e)})
 
-        return {"eda_result": eda_dfs[0] if eda_dfs else {}}
+        return {"eda_result": eda_dfs}
