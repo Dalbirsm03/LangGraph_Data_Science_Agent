@@ -238,4 +238,4 @@ class EDA_Node:
         if "is_eda_valid" not in state:
             raise ValueError("EDA validation result not found in state")
             
-        return "rca_suggestions" if state["is_eda_valid"] else "eda_suggestions"
+        return "RCA_Suggestions" if state["is_eda_valid"] else "Eda_Suggestions"

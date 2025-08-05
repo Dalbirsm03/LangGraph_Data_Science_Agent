@@ -298,4 +298,4 @@ class Data_Cleaning_Node:
         if "is_clean" not in state:
             raise ValueError("Cleaning validation result not found in state")
             
-        return "eda_suggestions" if state["is_clean"] else "cleaning_suggestions"
+        return "Eda_Suggestions" if state["is_clean"] else "Cleaning_Suggestions"

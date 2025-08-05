@@ -26,6 +26,19 @@ class Graph_Builder:
         self.graph_builder.add_edge("Cleaning_Suggestions","Cleaning_Code_Generator")
         self.graph_builder.add_edge("Cleaning_Code_Generator","Cleaning_Code_Executor")
         self.graph_builder.add_edge("Cleaning_Code_Executor","Cleaning_Check")
-        self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"eda_suggestions",False:"Cleaning_Suggestions"})
+        self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"Eda_Suggestions",False:"Cleaning_Suggestions"})
 
-        
+        self.obj = EDA_Node(self.llm)
+        self.graph_builder.add_node("Eda_Suggestions",self.obj.eda_suggestions)
+        self.graph_builder.add_node("Eda_Code_Generator",self.obj.eda_code)
+        self.graph_builder.add_node("Eda_Code_Executor",self.obj.execute_eda_code)
+        self.graph_builder.add_node("Eda_Check",self.obj.eda_checking)
+
+        self.graph_builder.add_edge("Cleaning_Check","Eda_Suggestions")
+        self.graph_builder.add_edge("Eda_Suggestions","Eda_Code_Generator")
+        self.graph_builder.add_edge("Eda_Code_Generator","Eda_Code_Executor")
+        self.graph_builder.add_edge("Eda_Code_Executor","Eda_Check")
+        self.graph_builder.add_conditional_edges("Eda_Check",self.obj.next_route,{True:"RCA_Suggestions",False:"Eda_Suggestions"})
+
+       
+       
