@@ -10,7 +10,7 @@ class Report:
         self.llm = llm
     
     def pandas_report(self, state: PythonAnalystState) -> dict:
-        cleaned_dfs = state["cleaned_data"]
+        cleaned_dfs = state['raw_data']
         report_paths = []
 
         for i, df in enumerate(cleaned_dfs):
@@ -20,7 +20,6 @@ class Report:
             # Generate report
             profile = ProfileReport(df, title=f"Pandas Profiling Report {i+1}", minimal=True)
 
-            # Save report to a unique HTML file
             filename = f"profiling_report_{uuid.uuid4().hex[:8]}.html"
             filepath = os.path.join("reports", filename)
             os.makedirs("reports", exist_ok=True)

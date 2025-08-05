@@ -5,6 +5,7 @@ from Data_Science_Agent.PYTHON_Data_Analyst.EDA_Node import EDA_Node
 from Data_Science_Agent.PYTHON_Data_Analyst.Python_Profiling_Node import Report
 from Data_Science_Agent.PYTHON_Data_Analyst.RCA_Node import RCA_Node
 from Data_Science_Agent.PYTHON_Data_Analyst.Visual_Node import Visual_Node
+from Data_Science_Agent.PYTHON_Data_Analyst.Output_Node import Output_Node
 
 from langgraph.graph import START , END , StateGraph
 
@@ -17,22 +18,18 @@ class Graph_Builder:
     def py_graph(self):
         self.graph_builder = StateGraph(PythonAnalystState)
         self.obj = Data_Cleaning_Node(self.llm)
-        self.Report = Report(self.llm)
+        self.output = Output_Node(self.llm)
+        
+        self.graph_builder.add_node("Output",self.output.output_parser)
 
-        self.graph_builder.add_node("Report",self.Report.pandas_report)
-        self.graph_builder.add_edge(START,"Report")
-
-
-        self.graph_builder.add_node("Cleaning_Suggestions",self.obj.cleaning_suggestions)
-        self.graph_builder.add_node("Cleaning_Code_Generator",self.obj.cleaning_code)
-        self.graph_builder.add_node("Cleaning_Code_Executor",self.obj.cleaning_executor)
+        self.graph_builder.add_node("Clean_Code_Generator",self.obj.generate_cleaning_code)
+        self.graph_builder.add_node("Cleaning_Code_Executor",self.obj.execute_cleaning_code)
         self.graph_builder.add_node("Cleaning_Check",self.obj.check_node)
 
-        self.graph_builder.add_edge(START,"Cleaning_Suggestions")
-        self.graph_builder.add_edge("Cleaning_Suggestions","Cleaning_Code_Generator")
-        self.graph_builder.add_edge("Cleaning_Code_Generator","Cleaning_Code_Executor")
+        self.graph_builder.add_edge(START,"Clean_Code_Generator")
+        self.graph_builder.add_edge("Clean_Code_Generator","Cleaning_Code_Executor")
         self.graph_builder.add_edge("Cleaning_Code_Executor","Cleaning_Check")
-        self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"Eda_Suggestions",False:"Cleaning_Suggestions"})
+        self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"Eda_Suggestions",False:"Clean_Code_Generator"})
 
         self.obj = EDA_Node(self.llm)
         self.graph_builder.add_node("Eda_Suggestions",self.obj.eda_suggestions)
@@ -40,11 +37,10 @@ class Graph_Builder:
         self.graph_builder.add_node("Eda_Code_Executor",self.obj.execute_eda_code)
         self.graph_builder.add_node("Eda_Check",self.obj.eda_checking)
 
-        self.graph_builder.add_edge("Cleaning_Check","Eda_Suggestions")
         self.graph_builder.add_edge("Eda_Suggestions","Eda_Code_Generator")
         self.graph_builder.add_edge("Eda_Code_Generator","Eda_Code_Executor")
         self.graph_builder.add_edge("Eda_Code_Executor","Eda_Check")
-        self.graph_builder.add_conditional_edges("Eda_Check",self.obj.next_route,{True:"RCA_Suggestions",False:"Eda_Suggestions"})
+        self.graph_builder.add_conditional_edges("Eda_Check",self.obj.next_route,{True:"RCA_Node",False:"Eda_Suggestions"})
 
         self.obj = RCA_Node(self.llm)
         self.graph_builder.add_node("RCA_Node",self.obj.rca_node)
@@ -58,6 +54,9 @@ class Graph_Builder:
         self.graph_builder.add_edge("RCA_Node","Visual_Suggestions")
         self.graph_builder.add_edge("Visual_Suggestions","Visual_Code_Generator")
         self.graph_builder.add_edge("Visual_Code_Generator","Visual_Code_Executor")
+        self.graph_builder.add_edge("Visual_Code_Executor","Output")
+
+        self.graph_builder.add_edge("Output",END)
 
     def setup_graph(self,usecase : str):
         if usecase == "Data Analyst Agent":

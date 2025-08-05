@@ -82,10 +82,13 @@ class EDA_Node:
         chain = prompt | self.llm | StrOutputParser()
 
 
-        response = chain.invoke({"cleaned_data": dynamic_sample(state["cleaned_data"]).to_markdown(index=False),
+        response = chain.invoke({"cleaned_data":  "\n\n".join([
+                                    f"File {i+1} Sample:\n{dynamic_sample(df).to_markdown(index=False)}"
+                                    for i, df in enumerate(state["cleaned_data"])
+                                    if isinstance(df, pd.DataFrame)]),
                                  "user_query":state["question"],
                                  "eda_recheck_suggestions": state.get("eda_recheck_suggestions", "") if not state.get("is_eda_valid", True) else ""})
-        
+        print("EDA_Suggested")
         return{"eda_suggestion" : response}
     
 
@@ -131,6 +134,7 @@ class EDA_Node:
 
         chain = prompt | self.llm | PythonOutputParser()
         response = chain.invoke({"recommended_steps": state["eda_suggestion"]})
+        print("Eda_Code")
         return {"eda_code": response}
     
 

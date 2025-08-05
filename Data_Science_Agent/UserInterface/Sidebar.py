@@ -7,44 +7,40 @@ class SidebarUI:
         self.config = Config()
 
     def Load_UI(self):
-        use_case = st.sidebar.selectbox("Select UseCase", self.config.get_usecase_options())
-        self.user_controls["usecase"] = use_case
-        # LLM Selection
-        llm = st.sidebar.selectbox("Select LLM", self.config.get_llms())
-        self.user_controls["llm"] = llm
+        st.set_page_config(page_title="🤖 " + self.config.get_page_title(), layout="wide")
+        st.header("🤖 " + self.config.get_page_title())
+        st.sidebar.title("🛠️ Configuration")
+        with st.sidebar:
+            llm_options = self.config.get_llms()
+            usecase_options = self.config.get_usecase_options()
+            self.user_controls["selected_usecase"] = st.selectbox("Select Usecases", usecase_options)
+            self.user_controls["selected_llm"] = st.selectbox("Select LLM", llm_options)
+            self.user_controls["llm_type"] = self.user_controls["selected_llm"]
 
-        # Dynamic model options
-        if llm == "Google Gemini":
-            model = st.sidebar.selectbox("Select Gemini Model", self.config.get_gemini_llm())
-        elif llm == "Groq":
-            model = st.sidebar.selectbox("Select Groq Model", self.config.get_groq_model_options())
-        else:
-            model = None
+            if self.user_controls["selected_llm"] == 'Groq':
+                model_options = self.config.get_groq_model_options()
+                self.user_controls["selected_groq_model"] = st.selectbox("Select Model", model_options)
+                self.user_controls["GROQ_API_KEY"] = st.session_state["GROQ_API_KEY"] = st.text_input("API Key", type="password", key="groq_api_key")
 
-        self.user_controls["model"] = model
+                if not self.user_controls["GROQ_API_KEY"]:
+                    st.warning("⚠️ Please enter your GROQ API key to proceed. Don't have? refer : https://console.groq.com/keys ")
 
-        # API key input
-        api_key = st.sidebar.text_input(f"Enter {llm} API Key", type="password")
-        self.user_controls["api_key"] = api_key
+            elif self.user_controls["selected_llm"] == 'Google Gemini':
+                model_options = self.config.get_gemini_llm()
+                self.user_controls["select_gemini_model"] = st.selectbox("Select Model", model_options)
+                self.user_controls["GOOGLE_API_KEY"] = st.session_state["GOOGLE_API_KEY"] = st.text_input("API Key", type="password", key="gemini_api_key")
 
+                if not self.user_controls["GOOGLE_API_KEY"]:
+                    st.warning("⚠️ Please enter your Google Gemini API key to proceed. Don't have? refer : https://aistudio.google.com/")
 
-        # Mode selection
-        mode = st.sidebar.radio("Choose Data Source", ["Upload File", "Connect SQL"])
-        self.user_controls["mode"] = mode
-
-        if mode == "Upload File":
-            uploaded_file = st.sidebar.file_uploader("Upload your dataset", type=["csv", "xlsx", "json"], accept_multiple_files = True)
-            self.user_controls["file"] = uploaded_file
-
-        elif mode == "Connect SQL":
-            st.sidebar.markdown("### 🔐 SQL Credentials")
-            self.user_controls["sql_config"] = {
-                "user": st.sidebar.text_input("Username"),
-                "password": st.sidebar.text_input("Password", type="password"),
-                "host": st.sidebar.text_input("Host"),
-                "port": st.sidebar.text_input("Port", value="3306"),
-                "database": st.sidebar.text_input("Database"),
-            }
-
+            mode = st.sidebar.radio("Choose Data Source", ["Upload File", "Connect SQL"])
+            self.user_controls["mode"] = mode
+            if mode == "Upload File":
+                uploaded_files = st.sidebar.file_uploader(
+                    "Upload your dataset",
+                    type=["csv", "xlsx", "json"],
+                    accept_multiple_files=True
+                )
+                self.user_controls["file"] = uploaded_files
 
         return self.user_controls
