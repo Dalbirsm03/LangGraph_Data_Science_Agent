@@ -40,5 +40,17 @@ class Graph_Builder:
         self.graph_builder.add_edge("Eda_Code_Executor","Eda_Check")
         self.graph_builder.add_conditional_edges("Eda_Check",self.obj.next_route,{True:"RCA_Suggestions",False:"Eda_Suggestions"})
 
-       
-       
+        self.obj=RCA_Node(self.llm)
+        self.graph_builder.add_node("RCA_Node",self.obj.rca_node)
+        self.graph_builder.add_edge("Eda_Check","RCA_Node")
+
+        self.obj=Visual_Node(self.llm)
+        self.graph_builder.add_node("Visual_Suggestions",self.obj.visual_suggestions)
+        self.graph_builder.add_node("Visual_Code_Generator",self.obj.visual_code)
+        self.graph_builder.add_node("Visual_Code_Executor",self.obj.execute_visual_code)
+        
+        self.graph_builder.add_edge("RCA_Node","Visual_Suggestions")
+        self.graph_builder.add_edge("Visual_Suggestions","Visual_Code_Generator")
+        self.graph_builder.add_edge("Visual_Code_Generator","Visual_Code_Executor")
+
+            
