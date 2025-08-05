@@ -2,7 +2,7 @@ from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
 
 from Data_Science_Agent.PYTHON_Data_Analyst.Data_Cleaning_Node import Data_Cleaning_Node
 from Data_Science_Agent.PYTHON_Data_Analyst.EDA_Node import EDA_Node
-from Data_Science_Agent.PYTHON_Data_Analyst.Python_Profiling_Node import ProfileReport
+from Data_Science_Agent.PYTHON_Data_Analyst.Python_Profiling_Node import Report
 from Data_Science_Agent.PYTHON_Data_Analyst.RCA_Node import RCA_Node
 from Data_Science_Agent.PYTHON_Data_Analyst.Visual_Node import Visual_Node
 
@@ -14,9 +14,15 @@ class Graph_Builder:
         self.llm = llm
         self.langsmith_client = langsmith_client
 
-    def py_graph(self,llm):
+    def py_graph(self):
         self.graph_builder = StateGraph(PythonAnalystState)
         self.obj = Data_Cleaning_Node(self.llm)
+        self.Report = Report(self.llm)
+
+        self.graph_builder.add_node("Report",self.Report.pandas_report)
+        self.graph_builder.add_edge(START,"Report")
+
+
         self.graph_builder.add_node("Cleaning_Suggestions",self.obj.cleaning_suggestions)
         self.graph_builder.add_node("Cleaning_Code_Generator",self.obj.cleaning_code)
         self.graph_builder.add_node("Cleaning_Code_Executor",self.obj.cleaning_executor)
@@ -40,11 +46,11 @@ class Graph_Builder:
         self.graph_builder.add_edge("Eda_Code_Executor","Eda_Check")
         self.graph_builder.add_conditional_edges("Eda_Check",self.obj.next_route,{True:"RCA_Suggestions",False:"Eda_Suggestions"})
 
-        self.obj=RCA_Node(self.llm)
+        self.obj = RCA_Node(self.llm)
         self.graph_builder.add_node("RCA_Node",self.obj.rca_node)
         self.graph_builder.add_edge("Eda_Check","RCA_Node")
 
-        self.obj=Visual_Node(self.llm)
+        self.obj = Visual_Node(self.llm)
         self.graph_builder.add_node("Visual_Suggestions",self.obj.visual_suggestions)
         self.graph_builder.add_node("Visual_Code_Generator",self.obj.visual_code)
         self.graph_builder.add_node("Visual_Code_Executor",self.obj.execute_visual_code)
@@ -53,4 +59,7 @@ class Graph_Builder:
         self.graph_builder.add_edge("Visual_Suggestions","Visual_Code_Generator")
         self.graph_builder.add_edge("Visual_Code_Generator","Visual_Code_Executor")
 
-            
+    def setup_graph(self,usecase : str):
+        if usecase == "Data Analyst Agent":
+            self.py_graph()
+        return self.graph_builder.compile()

@@ -25,3 +25,5 @@ class PythonAnalystState(TypedDict):
     visual_code: str
     visual_output: Any
     is_visual_ok: bool
+    
+    final_result : any
