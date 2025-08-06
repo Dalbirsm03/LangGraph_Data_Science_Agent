@@ -9,7 +9,7 @@ class Output_Node:
     def output_parser(self,state :PythonAnalystState):
         
         final_summary_prompt = PromptTemplate(
-                input_variables=["user_query", "eda_result", "rca_result", "visual_paths", "profile_links"],
+                input_variables=["user_query", "eda_result", "rca_result", "visual_paths"],
                 template="""
             You are a senior data analyst tasked with writing a **final insights summary** based on multiple analysis components.
 
@@ -33,8 +33,6 @@ class Output_Node:
             🖼️ **Visual Paths**:  
             {visual_paths}
 
-            📑 **Pandas Profile Links**:  
-            {profile_links}
 
             ---
 
@@ -50,9 +48,15 @@ class Output_Node:
             Highlight the key reasons or explanations based on analysis. Be direct, structured, and use bullet points.
 
             ---
+            ### 🖼️ Visual Evidence {visual_paths} 
+            Present each visual insight using simple labels (e.g., **Image 1**, **Image 2**), followed by a brief caption or description of what the image shows.  
+            **Do not** show any file paths or code — just cleanly formatted markdown with numbered image labels and bullet-pointed interpretations.
 
-            ### 🖼️ Visual Evidence  
-            List the images provided (with captions). Show how each supports your findings.
+            Example format:
+
+            - **Image 1**: Distribution of Selling Price shows right-skewed data with high-value outliers.
+            - **Image 2**: Scatter plot of Selling Price vs Year reveals weak positive correlation.
+            - **Image 3**: Year-wise price trend highlights increased prices for newer models.
 
             ---
 
@@ -74,7 +78,6 @@ class Output_Node:
                 "user_query": state["question"],
                 "eda_result": state["eda_result"],
                 "rca_result": state["rca_suggestion"],
-                "visual_paths": "\n".join(state.get("visual_output", [])),
-                "profile_links": "\n".join(state.get("profiling_reports", [])),
+                "visual_paths": "\n".join(state.get("visual_images", [])),
             })
         return{"final_result":response}

@@ -24,34 +24,31 @@ class Graph_Builder:
 
         self.graph_builder.add_node("Clean_Code_Generator",self.obj.generate_cleaning_code)
         self.graph_builder.add_node("Cleaning_Code_Executor",self.obj.execute_cleaning_code)
-        self.graph_builder.add_node("Cleaning_Check",self.obj.check_node)
+        # self.graph_builder.add_node("Cleaning_Check",self.obj.check_node)
 
         self.graph_builder.add_edge(START,"Clean_Code_Generator")
         self.graph_builder.add_edge("Clean_Code_Generator","Cleaning_Code_Executor")
-        self.graph_builder.add_edge("Cleaning_Code_Executor","Cleaning_Check")
-        self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"EDA_Analysis",False:"Clean_Code_Generator"})
+        self.graph_builder.add_edge("Cleaning_Code_Executor","EDA_Analysis")
+        # self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"EDA_Analysis",False:"Clean_Code_Generator"})
 
         self.obj = EDA_Node(self.llm)
         self.graph_builder.add_node("EDA_Analysis",self.obj.perform_eda_analysis)
         self.graph_builder.add_node("EDA_Code_Executor",self.obj.execute_eda_code)
-        self.graph_builder.add_node("EDA_Check",self.obj.eda_checking)
+        # self.graph_builder.add_node("EDA_Check",self.obj.eda_checking)
 
         self.graph_builder.add_edge("EDA_Analysis","EDA_Code_Executor")
-        self.graph_builder.add_edge("EDA_Code_Executor","EDA_Check")
-        self.graph_builder.add_conditional_edges("EDA_Check",self.obj.next_route,{True:"RCA_Node",False:"EDA_Analysis"})
+        self.graph_builder.add_edge("EDA_Code_Executor","RCA_Node")
+        # self.graph_builder.add_conditional_edges("EDA_Check",self.obj.next_route,{True:"RCA_Node",False:"EDA_Analysis"})
 
         self.obj = RCA_Node(self.llm)
         self.graph_builder.add_node("RCA_Node",self.obj.rca_node)
-        self.graph_builder.add_edge("Eda_Check","RCA_Node")
 
         self.obj = Visual_Node(self.llm)
-        self.graph_builder.add_node("Visual_Suggestions",self.obj.visual_suggestions)
-        self.graph_builder.add_node("Visual_Code_Generator",self.obj.visual_code)
+        self.graph_builder.add_node("Visual_Analysis",self.obj.generate_visual_code)
         self.graph_builder.add_node("Visual_Code_Executor",self.obj.execute_visual_code)
         
-        self.graph_builder.add_edge("RCA_Node","Visual_Suggestions")
-        self.graph_builder.add_edge("Visual_Suggestions","Visual_Code_Generator")
-        self.graph_builder.add_edge("Visual_Code_Generator","Visual_Code_Executor")
+        self.graph_builder.add_edge("RCA_Node","Visual_Analysis")
+        self.graph_builder.add_edge("Visual_Analysis","Visual_Code_Executor")
         self.graph_builder.add_edge("Visual_Code_Executor","Output")
 
         self.graph_builder.add_edge("Output",END)

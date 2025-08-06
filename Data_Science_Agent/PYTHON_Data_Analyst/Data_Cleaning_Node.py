@@ -81,7 +81,7 @@ class Data_Cleaning_Node:
                 raise ValueError("Failed to extract python code block from LLM response")
         else:
             cleaning_code = code_match.group(1).strip()
-
+        print("Analysis Cleaning")
         return {"cleaning_code": cleaning_code}
 
 
@@ -138,69 +138,69 @@ class Data_Cleaning_Node:
                 logger.error("Error running cleaning function on DataFrame %s: %s", i + 1, str(e))
                 logger.info("Appending original DataFrame %s due to runtime error", i + 1)
                 cleaned_dfs.append(df)
-
+        print("Cleaned")
         return {"cleaned_data": cleaned_dfs}
     
 
-    def check_node(self, state: PythonAnalystState) -> dict:
-        prompt = PromptTemplate(
-            template="""
-    You are a data cleaning validation agent.
+    # def check_node(self, state: PythonAnalystState) -> dict:
+    #     prompt = PromptTemplate(
+    #         template="""
+    # You are a data cleaning validation agent.
 
-    Your job is to analyze a given pandas DataFrame and verify whether it has been cleaned according to a list of suggestions or required data cleaning steps.
+    # Your job is to analyze a given pandas DataFrame and verify whether it has been cleaned according to a list of suggestions or required data cleaning steps.
 
-    You must evaluate whether the DataFrame satisfies all the following conditions (as applicable):
-    - Columns with >40% missing values have been removed.
-    - Missing numeric values imputed with mean.
-    - Missing categorical values imputed with mode.
-    - Appropriate column data types.
-    - Duplicates removed.
-    - Rows with missing values removed.
-    - Outliers removed using 3x IQR.
+    # You must evaluate whether the DataFrame satisfies all the following conditions (as applicable):
+    # - Columns with >40% missing values have been removed.
+    # - Missing numeric values imputed with mean.
+    # - Missing categorical values imputed with mode.
+    # - Appropriate column data types.
+    # - Duplicates removed.
+    # - Rows with missing values removed.
+    # - Outliers removed using 3x IQR.
 
-    🧾 **Cleaned Data (Markdown Table)**:
-    {cleaned_data}
+    # 🧾 **Cleaned Data (Markdown Table)**:
+    # {cleaned_data}
 
-    ---
+    # ---
 
-    🎯 **Your Task**:
-    Critically assess the cleaned data. Based on your analysis, answer the following:
+    # 🎯 **Your Task**:
+    # Critically assess the cleaned data. Based on your analysis, answer the following:
 
-    Return your response ONLY in the following exact JSON format and nothing else:
+    # Return your response ONLY in the following exact JSON format and nothing else:
 
-    ```json
-    {{
-    "is_clean": true,
-    "missing_points": ["<Issue 1>", "<Issue 2>"],
-    "reasoning": "One-line explanation."
-    }}
+    # ```json
+    # {{
+    # "is_clean": true,
+    # "missing_points": ["<Issue 1>", "<Issue 2>"],
+    # "reasoning": "One-line explanation."
+    # }}
 
-    """,
-            input_variables=["cleaned_data"]
-        )
-        sample_parts = []
-        for i, df in enumerate(state["cleaned_data"]):
-            if isinstance(df, pd.DataFrame):
-                sample_df = dynamic_sample(df)
-                sample_parts.append(f"File {i + 1} Sample:\n{sample_df.to_string(index=False)}")
-        cleaned_table = "\n\n".join(sample_parts)
+    # """,
+    #         input_variables=["cleaned_data"]
+    #     )
+    #     sample_parts = []
+    #     for i, df in enumerate(state["cleaned_data"]):
+    #         if isinstance(df, pd.DataFrame):
+    #             sample_df = dynamic_sample(df)
+    #             sample_parts.append(f"File {i + 1} Sample:\n{sample_df.to_string(index=False)}")
+    #     cleaned_table = "\n\n".join(sample_parts)
 
-        chain = prompt | self.llm | JsonOutputParser()
-        response = chain.invoke({
-            "cleaned_data": cleaned_table,
-        })
+    #     chain = prompt | self.llm | JsonOutputParser()
+    #     response = chain.invoke({
+    #         "cleaned_data": cleaned_table,
+    #     })
         
-        if not isinstance(response, dict) or "is_clean" not in response:
-            raise ValueError("Invalid response format from cleaning validation")
-        print(response["is_clean"])
-        return {
-            "is_clean": response["is_clean"],
-            "cleaning_recheck_suggestions": response
-        }
+    #     if not isinstance(response, dict) or "is_clean" not in response:
+    #         raise ValueError("Invalid response format from cleaning validation")
+    #     print(response["is_clean"])
+    #     return {
+    #         "is_clean": response["is_clean"],
+    #         "cleaning_recheck_suggestions": response
+    #     }
     
 
-    def next_route(self, state: PythonAnalystState) -> str:
-        if "is_clean" not in state:
-            raise ValueError("Cleaning validation result not found in state")
+    # def next_route(self, state: PythonAnalystState) -> str:
+    #     if "is_clean" not in state:
+    #         raise ValueError("Cleaning validation result not found in state")
             
-        return "eda_suggestions" if state["is_clean"] else "Clean_Code_Generator"
+    #     return "EDA_Analysis" if state["is_clean"] else "Clean_Code_Generator"

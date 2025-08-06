@@ -13,68 +13,66 @@ class RCA_Node:
     def __init__(self, llm):
         self.llm = llm
 
-    def rca_node(self,state:PythonAnalystState):
+    def rca_node(self, state: PythonAnalystState):
         prompt = PromptTemplate(
             template="""
-        You are a senior data analyst tasked with performing **Root Cause and Recommendation Analysis (RCRA)**.
+        You are a senior data analyst tasked with performing Root Cause and Recommendation Analysis (RCA).
+
+        User Question: "{user_query}"
+
+        EDA Summary:
+        {eda_result}
 
         ---
 
-        📌 **User Question/Concern**:  
-        "{user_query}"
-
-        📊 **EDA Summary**:  
-        {eda_suggestion}
-
-        📄 **Cleaned Data Sample** (Markdown Table):  
-        {sampled_data}
-
-        ---
-
-        🎯 **Your Task**:
-
-        Step 1: Perform **Root Cause Analysis (RCA)**  
+        🎯 Task:
         - Confirm if the user's concern is true using data.
-        - Identify the top 3–5 contributing factors behind the issue using trends, correlations, segments, or outliers.
-        - Highlight specific segments, time periods, and user groups most affected.
-        - Ensure all findings are directly connected to the user's question.
-
-        Step 2: Suggest **Actionable Recommendations**  
-        - Propose 2–3 specific, measurable, and realistic strategies to improve the situation (e.g., increase bicycle sales next month).
-        - Each recommendation must clearly relate to one or more identified root causes.
-
-        If any essential data is missing or limited, call it out.
+        - Identify top 3–5 contributing factors.
+        - Highlight affected segments/timeframes.
+        - Propose 2–3 actionable recommendations.
 
         ---
 
-        📤 **Output Format (Markdown)**:
+        ✍️ Guidelines:
+        - Be sharp, concise, and specific.
+        - Avoid vague or generic language.
+        - Use short bullet points with strong verbs and clear metrics.
+        - Avoid repeating the user query.
 
-        ### 🧠 Root Cause Summary  
-        - Brief overview of the core issue and what’s driving it.
+        ---
 
-        ### 🔍 Contributing Factors  
-        - Bullet list of data-driven causes (3–5)
+        📌 Output (markdown, strict format):
+        ### ✅ Root Cause Summary
+        - (Short 1-liner summary)
 
-        ### 📌 Segment/Group Focus  
-        - Key timeframes, regions, demographics, or categories involved
+        ### 🔍 Contributing Factors
+        - Bullet 1 (crisp)
+        - Bullet 2 (data-backed)
+        - Bullet 3 (sharp)
 
-        ### ⚠️ Data Limitations  
-        - Mention if anything is missing that could affect accuracy
+        ### 📊 Segment/Group Focus
+        - Bullet 1 (if applicable)
+        - Bullet 2
 
-        ### 📈 Actionable Recommendations  
-        - Bullet list of strategies to fix/improve the situation next cycle
+        ### ⚠️ Data Limitations
+        - Bullet 1
+        - Bullet 2
+
+        ### 💡 Actionable Recommendations
+        - Recommendation 1 (short + direct)
+        - Recommendation 2
         """,
-            input_variables=["user_query", "eda_suggestion", "sampled_data"])
-        
+            input_variables=["user_query", "eda_result"]
+        )
+
+
+        eda_summary = state.get("eda_result", "")
+
         chain = prompt | self.llm | StrOutputParser()
+        response = chain.invoke({
+                "user_query": state.get("question", ""),
+                "eda_result": eda_summary,
+            })
 
-
-        response = chain.invoke({"user_query" : state["question"],
-                                 "eda_suggestion" : state["eda_suggestion"],
-                                 "sampled_data" : dynamic_sample(state["cleaned_data"]).to_markdown(index=False)})
-        return {"rca_suggestion" : response}
-
-                                 
-        
-        
-
+        print("RCA Done")
+        return {"rca_suggestion": response}
