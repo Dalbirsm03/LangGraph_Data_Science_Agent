@@ -66,45 +66,33 @@ class Visual_Node:
         # Step 1: Suggest visualizations
         suggestion_prompt = PromptTemplate(
             template="""
-    You are an elite data visualization strategist. Your task is to design only the most critical visualizations to help answer the user’s original question.
+    You are an elite data visualization strategist. Your task is to design only the most critical visualization to help answer the user’s question.
     ---
-    ### 🎯 Objective:
-    Extract **2 to 3 visualizations** that expose patterns, trends, or anomalies directly tied to the user's query.  
-    No fluff. Only purpose-built visuals that add analytical clarity.
-    ---
-    ### 📥 Inputs:
-    - 🧼 Cleaned Data Sample (columns):  
+    ### Inputs:
+    - Cleaned Data (columns):  
     {cleaned_data}
-    - ❓ User Query:  
+    - User Query:  
     "{user_query}"
-    - 📊 EDA Summary:  
+    - EDA Summary:  
     {eda_result}
-    - 🧠 RCA Summary:  
+    - RCA Summary:  
     {rca_result}
     ---
-    ### 📤 Output Instructions:
-    For **each visualization**, provide only:
-    1. **Chart Title** – Insight-driven
-    2. **Chart Type** – (bar, line, boxplot, heatmap, histogram, etc.)
-    3. **X-Axis** – Column or logic
-    4. **Y-Axis** – Column or logic
+    ### Output Instructions:
+    For **1 visualization**, provide:
+    1. **Chart Title**
+    2. **Chart Type** – (bar, line, heatmap, histogram, etc.)
+    3. **X-Axis**
+    4. **Y-Axis**
+    5. **Short Description** – in plain English, explain what the chart will show.
     ---
-    ### 📝 Output Format:
-    ### 📈 Suggested Visualizations:
-    #### 1. [Chart Title]  
-    - **Type**: ...  
-    - **X**: ...  
-    - **Y**: ...  
-    #### 2. [Chart Title]  
-    - **Type**: ...  
-    - **X**: ...  
-    - **Y**: ...  
-    [Max: 3 visuals]
-    ---
-    ### ⚠ Rules:
-    - DO NOT write code or explain.
-    - Every chart must directly help answer the user’s query.
-    - Base visuals strictly on the EDA and RCA findings.
+    Output Format:
+    ### Suggested Visualization:
+    - **Title**: ...
+    - **Type**: ...
+    - **X**: ...
+    - **Y**: ...
+    - **Description**: ...
     """,
             input_variables=["user_query", "cleaned_data", "eda_result", "rca_result"]
         )
@@ -117,54 +105,47 @@ class Visual_Node:
             "cleaned_data": column_summary
         })
 
+        # Step 2: Generate Python code for the visualization
         code_prompt = PromptTemplate(
             template="""
     You are a Python visualization engineer.
 
-    Your job is to generate clean, executable Python code for the approved visualizations.
-    ---
-    ### 📦 Input:
-    Below is the list of charts you must implement:
+    Generate a clean, executable Python function for the visualization below:
     {visual_suggestion}
     ---
-    ### 🛠 Instructions:
-    - Create a single function: `generate_visualizations(df)`
-    - Place all imports inside the function
-    - Implement each visualization exactly as specified
+    Instructions:
+    - Function name: `generate_visualizations(df)`
+    - Put all imports inside the function
+    - Implement exactly as specified
     - Add descriptive titles and axis labels
-    - Call `plt.show()` (or `fig.show()` for Plotly) after each chart
+    - Call plt.show() (or fig.show() for Plotly) after each chart
     ---
-    ### ⚠ Rules:
+    Rules:
     - No print(), return(), placeholders, markdown, or explanations
     - No hardcoded values — use only df columns
-    - Code must run immediately
     ---
-    ### 📤 Output Format:
+    Output Format:
     ```python
     def generate_visualizations(df):
         import pandas as pd
         import matplotlib.pyplot as plt
         import seaborn as sns
 
-        # Chart 1
-        ...
-        plt.show()
-
-        # Chart 2
-        ...
-        plt.show()
-
-        # Chart N (if applicable)
+        # Chart
         ...
         plt.show()
     """,
-    input_variables=["visual_suggestion"]
-    )
+        input_variables=["visual_suggestion"]
+        )
 
         code_chain = code_prompt | self.llm | PythonOutputParser()
         visual_code = code_chain.invoke({"visual_suggestion": visual_plan})
 
-        return {"visual_code": visual_code}
+        return {
+            "visual_plan": visual_plan,
+            "visual_code": visual_code
+        }
+
     
     def execute_visual_code(self, state: PythonAnalystState) -> dict:
         code = state.get("visual_code")

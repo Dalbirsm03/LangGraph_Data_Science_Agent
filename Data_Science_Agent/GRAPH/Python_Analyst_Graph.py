@@ -17,37 +17,34 @@ class Graph_Builder:
 
     def py_graph(self):
         self.graph_builder = StateGraph(PythonAnalystState)
-        self.obj = Data_Cleaning_Node(self.llm)
-        self.output = Output_Node(self.llm)
-        
-        self.graph_builder.add_node("Output",self.output.output_parser)
 
-        self.graph_builder.add_node("Clean_Code_Generator",self.obj.generate_cleaning_code)
-        self.graph_builder.add_node("Cleaning_Code_Executor",self.obj.execute_cleaning_code)
+        cleaning_node = Data_Cleaning_Node(self.llm)
+        eda_node = EDA_Node(self.llm)
+        rca_node = RCA_Node(self.llm)
+        visual_node = Visual_Node(self.llm)
+        output_node = Output_Node(self.llm)
+        report_node = Report(self.llm)
 
-        self.graph_builder.add_edge(START,"Clean_Code_Generator")
-        self.graph_builder.add_edge("Clean_Code_Generator","Cleaning_Code_Executor")
-        self.graph_builder.add_edge("Cleaning_Code_Executor","EDA_Analysis")
+        self.graph_builder.add_node("Clean_Code_Generator", cleaning_node.generate_cleaning_code)
+        self.graph_builder.add_node("Cleaning_Code_Executor", cleaning_node.execute_cleaning_code)
+        self.graph_builder.add_node("EDA_Analysis", eda_node.perform_eda_analysis)
+        self.graph_builder.add_node("EDA_Code_Executor", eda_node.execute_eda_code)
+        self.graph_builder.add_node("RCA_Node", rca_node.rca_node)
+        self.graph_builder.add_node("Visual_Analysis", visual_node.generate_visual_code)
+        self.graph_builder.add_node("Visual_Code_Executor", visual_node.execute_visual_code)
+        self.graph_builder.add_node("Report", report_node.pandas_report)
+        self.graph_builder.add_node("Output", output_node.output_parser)
 
-        self.obj = EDA_Node(self.llm)
-        self.graph_builder.add_node("EDA_Analysis",self.obj.perform_eda_analysis)
-        self.graph_builder.add_node("EDA_Code_Executor",self.obj.execute_eda_code)
-
-        self.graph_builder.add_edge("EDA_Analysis","EDA_Code_Executor")
-        self.graph_builder.add_edge("EDA_Code_Executor","RCA_Node")
-
-        self.obj = RCA_Node(self.llm)
-        self.graph_builder.add_node("RCA_Node",self.obj.rca_node)
-
-        self.obj = Visual_Node(self.llm)
-        self.graph_builder.add_node("Visual_Analysis",self.obj.generate_visual_code)
-        self.graph_builder.add_node("Visual_Code_Executor",self.obj.execute_visual_code)
-        
-        self.graph_builder.add_edge("RCA_Node","Visual_Analysis")
-        self.graph_builder.add_edge("Visual_Analysis","Visual_Code_Executor")
-        self.graph_builder.add_edge("Visual_Code_Executor","Output")
-
-        self.graph_builder.add_edge("Output",END)
+        self.graph_builder.add_edge(START, "Clean_Code_Generator")
+        self.graph_builder.add_edge("Clean_Code_Generator", "Cleaning_Code_Executor")
+        self.graph_builder.add_edge("Cleaning_Code_Executor", "EDA_Analysis")
+        self.graph_builder.add_edge("EDA_Analysis", "EDA_Code_Executor")
+        self.graph_builder.add_edge("EDA_Code_Executor", "RCA_Node")
+        self.graph_builder.add_edge("RCA_Node", "Visual_Analysis")
+        self.graph_builder.add_edge("Visual_Analysis", "Visual_Code_Executor")
+        self.graph_builder.add_edge("Visual_Code_Executor", "Report")
+        self.graph_builder.add_edge("Report", "Output")
+        self.graph_builder.add_edge("Output", END)
 
     def setup_graph(self,usecase : str):
         if usecase == "Data Analyst Agent":

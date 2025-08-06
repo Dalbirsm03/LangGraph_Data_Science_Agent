@@ -108,16 +108,7 @@ class EDA_Node:
         return {"eda_code": code}
 
     def execute_eda_code(self, state: PythonAnalystState) -> dict:
-        """
-        Executes the generated EDA code on the raw data in `state`.
 
-        Expects:
-            - state["eda_code"]: Python code defining a function `perform_eda(df)` returning a dict.
-            - state["raw_data"]: List of pandas DataFrames.
-
-        Returns:
-            dict: {"eda_result": [<results or errors for each df>]}
-        """
         if "eda_code" not in state:
             raise ValueError("Missing EDA code in state")
         if "raw_data" not in state:
@@ -126,66 +117,109 @@ class EDA_Node:
         eda_code = state["eda_code"]
         raw_data = state["raw_data"]
         eda_outputs = []
-        if not hasattr(np, "float"): np.float = float
-        if not hasattr(np, "int"): np.int = int
-        if not hasattr(np, "bool"): np.bool = bool
-        if not hasattr(np, "object"): np.object = object
 
-        # Optional: auto-replace old aliases in generated code
+        # Replace deprecated tokens in generated code
         eda_code = (
             eda_code.replace("np.float", "float")
                     .replace("np.int", "int")
                     .replace("np.bool", "bool")
                     .replace("np.object", "object")
-    )
+        )
 
+        # Common dtype name -> numpy dtype mapping
+        common_dtype_names = [
+            "float64", "float32", "int64", "int32", "int16", "int8",
+            "uint64", "uint32", "object", "bool"
+        ]
+
+        # Helper to build base global environment with dtype aliases
+        def make_global_env():
+            """Builds a safe execution environment for running generated EDA code without NumPy alias warnings."""
+            env = {
+                "pd": pd,
+                "np": np,
+                "datetime": datetime,
+                "__builtins__": __builtins__,
+                # Use built-in Python types for these
+                "float": float,
+                "int": int,
+                "bool": bool,
+                "object": object,
+            }
+
+            # Only include valid NumPy dtypes (avoid deprecated aliases like np.object, np.int, np.bool)
+            valid_numpy_dtypes = [
+                "float64", "float32", "int64", "int32", "int16", "int8",
+                "uint64", "uint32", "bool_", "complex64", "complex128"
+            ]
+
+            for name in valid_numpy_dtypes:
+                try:
+                    env[name] = getattr(np, name)
+                except AttributeError:
+                    pass  # Skip if NumPy version doesn't have this dtype
+
+            return env
+
+        # Attempt execution for each DataFrame
         for i, df in enumerate(raw_data, start=1):
             if not isinstance(df, pd.DataFrame):
                 self.logger.warning("Item %d in raw_data is not a DataFrame. Skipping...", i)
                 continue
 
-            try:
-                # Isolated environment for safe execution
-                global_env = {
-                    "pd": pd,
-                    "np": np,
-                    "datetime": datetime,
-                    "__builtins__": __builtins__,  # Allow built-ins
-                }
-                local_vars = {}
+            tried_retry = False
+            while True:
+                try:
+                    global_env = make_global_env()
+                    local_vars = {}
 
-                # Execute the provided EDA code
-                exec(eda_code, global_env, local_vars)
+                    # Execute the provided EDA code
+                    exec(eda_code, global_env, local_vars)
 
-                # Retrieve the EDA function
-                eda_func = local_vars.get("perform_eda")
-                if not callable(eda_func):
-                    raise ValueError("No callable function named 'perform_eda' found in the provided code")
+                    # Retrieve the EDA function
+                    eda_func = local_vars.get("perform_eda")
+                    if not callable(eda_func):
+                        raise ValueError("No callable function named 'perform_eda' found in the provided code")
 
-                # Execute the function with a copy of the DataFrame
-                result = eda_func(df.copy())
+                    # Execute the function with a copy of the DataFrame (non-destructive)
+                    result = eda_func(df.copy())
 
-                if not isinstance(result, dict):
-                    raise ValueError("'perform_eda' must return a dictionary")
+                    if not isinstance(result, dict):
+                        raise ValueError("'perform_eda' must return a dictionary")
 
-                eda_outputs.append(result)
-                self.logger.info("Successfully executed EDA on DataFrame %d", i)
+                    eda_outputs.append(result)
+                    self.logger.info("Successfully executed EDA on DataFrame %d", i)
+                    break  # success -> exit retry loop
 
-            except TypeError as te:
-                msg = str(te)
-                self.logger.error("Failed EDA on DataFrame %d: %s", i, msg)
-                hint = None
-                if "cannot be interpreted as an integer" in msg or "must be real number" in msg:
-                    hint = (
-                        "Likely cause: The EDA code used a DataFrame/Series where an integer was expected "
-                        "(e.g., `range(df)`, `for i in df`, or indexing with a DataFrame). "
-                        "Check the generated code for `range(` or integer-context usage of 'df'."
-                    )
-                eda_outputs.append({"error": msg, "hint": hint, "code": eda_code})
+                except NameError as ne:
+                    msg = str(ne)
+                    self.logger.error("NameError executing EDA on DataFrame %d: %s", i, msg)
+                    missing = None
+                    m = re.search(r"name '([^']+)' is not defined", msg)
+                    if m:
+                        missing = m.group(1)
+                    if missing and (missing in common_dtype_names) and not tried_retry:
+                        self.logger.info("Mapping missing name '%s' to numpy dtype and retrying", missing)
+                        tried_retry = True
+                        continue
+                    else:
+                        hint = None
+                        if missing:
+                            hint = f"Missing name: {missing}. Generated code referenced an unqualified dtype name."
+                        eda_outputs.append({"error": msg, "hint": hint, "code": eda_code})
+                        break
 
-            except Exception as e:
-                err_msg = str(e)
-                self.logger.error("Failed EDA on DataFrame %d: %s", i, err_msg)
-                eda_outputs.append({"error": err_msg, "code": eda_code})
+                except Exception as e:
+                    err_msg = str(e)
+                    self.logger.error("Failed EDA on DataFrame %d: %s", i, err_msg)
+                    hint = None
+                    if "cannot be interpreted as an integer" in err_msg or "must be real number" in err_msg:
+                        hint = (
+                            "Likely cause: The EDA code used a DataFrame/Series where an integer was expected "
+                            "(e.g., `range(df)`, `for i in df`, or indexing with a DataFrame). "
+                            "Check the generated code for `range(` or integer-context usage of 'df'."
+                        )
+                    eda_outputs.append({"error": err_msg, "hint": hint, "code": eda_code})
+                    break
 
         return {"eda_result": eda_outputs}

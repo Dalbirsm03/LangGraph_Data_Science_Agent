@@ -89,6 +89,12 @@ class Data_Cleaning_Node:
         return {"cleaning_code": raw}
 
     def execute_cleaning_code(self, state: PythonAnalystState) -> dict:
+        """
+        Execute generated cleaning code, but first cast integer columns to float64 on the copy
+        passed into the generated clean_data(df) function to avoid 'incompatible dtype' warnings/errors.
+        """
+        import numpy as np
+        import warnings
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
 
@@ -105,7 +111,7 @@ class Data_Cleaning_Node:
                 logger.warning("Item %s in raw_data is not a DataFrame, skipping...", i)
                 continue
 
-            # Execute in isolated namespace
+            # Execute in isolated namespace to obtain the cleaning function
             ns: dict = {}
             try:
                 exec(code, ns, ns)
@@ -130,11 +136,45 @@ class Data_Cleaning_Node:
                 continue
 
             try:
-                cleaned = cleaning_func(df.copy())
+                # Work on a copy so the original df is untouched
+                df_copy = df.copy()
+
+                # --- DTYPE SAFETY: detect integer-like columns and cast to float64 ---
+                # Cover pandas nullable Int types and numpy int kinds
+                int_cols = []
+                try:
+                    # pandas nullable Int64 dtype detection
+                    nullable_ints = df_copy.select_dtypes(include=[pd.Int64Dtype()]).columns.tolist()
+                except Exception:
+                    nullable_ints = []
+
+                # numpy/pandas standard integer dtypes
+                numpy_ints = df_copy.select_dtypes(include=[np.integer, "int64", "int32", "int16", "int8", "uint64", "uint32"]).columns.tolist()
+
+                # combine unique columns
+                for c in (nullable_ints + numpy_ints):
+                    if c not in int_cols:
+                        int_cols.append(c)
+
+                if int_cols:
+                    logger.info("Casting integer-like columns to float64 before running cleaning function: %s", int_cols)
+                    try:
+                        # suppress possible warnings about downcasting etc.
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", category=FutureWarning)
+                            df_copy[int_cols] = df_copy[int_cols].astype("float64")
+                    except Exception as cast_exc:
+                        logger.warning("Casting int->float failed for columns %s: %s", int_cols, cast_exc)
+
+                # Call the cleaning function on the dtype-safe copy
+                cleaned = cleaning_func(df_copy)
+
                 if not isinstance(cleaned, pd.DataFrame):
                     raise ValueError("Cleaning function did not return a pandas DataFrame")
+
                 cleaned_dfs.append(cleaned)
                 logger.info("Successfully cleaned DataFrame %s", i)
+
             except Exception as e:
                 logger.error("Error running cleaning function on DataFrame %s: %s", i, str(e))
                 logger.info("Appending original DataFrame %s due to runtime error", i)

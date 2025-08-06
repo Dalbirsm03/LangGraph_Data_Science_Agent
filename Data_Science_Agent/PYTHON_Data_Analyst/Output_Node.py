@@ -1,83 +1,131 @@
+from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
+import os
+import logging
+from typing import List
+
+logger = logging.getLogger(__name__)
 
 class Output_Node:
-    
-    def __init__(self,llm):
-            self.llm = llm
-    def output_parser(self,state :PythonAnalystState):
-        
+    def __init__(self, llm, report_base_url: str = None):
+        """
+        report_base_url: base HTTP URL that serves the report files, e.g. "http://localhost:8001".
+                         If None, defaults to "http://localhost:8001".
+                         Make sure a file server is serving the folder containing the report files.
+        """
+        self.llm = llm
+        self.report_base_url = (report_base_url.rstrip("/") if report_base_url else "http://localhost:8001")
+
+    def _make_report_url(self, profiling_report_value: str) -> str:
+        """
+        Convert whatever is in state['profiling_report'] into a clickable HTTP URL.
+        - If it's already an http(s) URL, return as-is.
+        - If it's a filesystem path, return report_base_url + "/" + basename(path).
+        """
+        if not profiling_report_value:
+            return ""
+        val = str(profiling_report_value).strip()
+
+        # If already a URL
+        if val.startswith("http://") or val.startswith("https://"):
+            return val
+        if val.startswith("[REPORT](") and val.endswith(")"):
+            inner = val[len("[REPORT]("):-1]
+            val = inner
+        fn = os.path.basename(val)
+        if not fn:
+            return ""
+        return f"{self.report_base_url}/{fn}"
+
+    def _format_visual_paths(self, visual_images: List[dict]) -> str:
+
+        if not visual_images:
+            return "No visuals generated."
+
+        lines = []
+        for i, item in enumerate(visual_images, start=1):
+            if isinstance(item, dict):
+                if "path" in item:
+                    lines.append(f"- **Image {i}**: Visualization saved (use the UI to open).")
+                elif "error" in item:
+                    lines.append(f"- **Image {i}**: Error — {item.get('error')}")
+                else:
+                    lines.append(f"- **Image {i}**: (unknown item)")
+            else:
+                # fallback for legacy list of strings
+                lines.append(f"- **Image {i}**: {str(item)}")
+        return "\n".join(lines)
+
+    def output_parser(self, state: PythonAnalystState) -> dict:
+        question = state.get("question", "")
+        eda_result = state.get("eda_result", "No EDA results available.")
+        rca_result = state.get("rca_suggestion", "No RCA available.")
+        # Optional: visual plan or other context can be added if available
+        visual_plan = state.get("visual_plan", "")
+
         final_summary_prompt = PromptTemplate(
-                input_variables=["user_query", "eda_result", "rca_result", "visual_paths"],
-                template="""
-            You are a senior data analyst tasked with writing a **final insights summary** based on multiple analysis components.
+        input_variables=["user_query", "eda_result", "rca_result"],
+        template="""
+    You are a senior data analyst.  
+    Using the provided **EDA results** and **RCA insights**, generate a concise, well-structured final report.  
+    The output must follow **exactly** the format and headings below.
 
-            Use the inputs below to generate a structured, markdown-formatted summary. The output should reflect *analytical thinking*, *data-backed insights*, and *visual+profiling references*.
+    ---
 
-            ---
+    ### **1. Dataset Summary**  
+    Write 2–3 sentences describing:  
+    - Number of rows & columns  
+    - Datatypes (numeric, categorical, etc.)  
+    - Domain or context (if inferable from the data)  
+    - Key anomalies or data quality issues (e.g., missing values, outliers, imbalance)
 
-            ### 🎯 Objective  
-            Summarize the data and analysis relevant to the user's intent, without repeating the user query.
+    ---
 
-            ---
+    ### **2. User Query Summary**  
+    Write a 2–3 line summary of what is being analyzed based on the user's query.  
+    Explicitly mention the **columns** referenced in the query and the main target or context if provided.  
+    Do not start with phrases like "The user is asking" or "The user wants to know".  
 
-            ### 📥 Input Components:
+    ---
 
-            📊 **EDA Result**:  
-            {eda_result}
+    ### **3. Root Cause Analysis**  
+    Write **3–4 bullet points** listing the most important patterns, trends, or anomalies from the data.  
+    These should be **general insights**, not limited to the user’s query.
 
-            🧠 **RCA Insights**:  
-            {rca_result}
+    ---
 
-            🖼️ **Visual Paths**:  
-            {visual_paths}
+    ### **4. Insights**  
+    Write **2–3 bullet points** that directly connect the findings to the user’s requested analysis.
 
+    ---
 
-            ---
+    ### **5. Recommendations**  
+    Write **2–3 actionable suggestions** for next steps, based on the findings.
 
-            ### 📌 Output Format (Markdown)
-            Write the response using the exact structure below:
+    ---
 
-            ### 🧾 Dataset Overview  
-            Summarize the dataset (rows, columns, type of data, context).
+    ### **6. Final Takeaway**  
+    Write **1–2 sentences** summarizing the single most critical insight and why it matters.
 
-            ---
+    ---
 
-            ### 🧠 Root Cause Insights  
-            Highlight the key reasons or explanations based on analysis. Be direct, structured, and use bullet points.
+    **Inputs for reference:**
+    - User Query: {user_query}  
+    - EDA Result: {eda_result}  
+    - RCA Insights: {rca_result}  
 
-            ---
-            ### 🖼️ Visual Evidence {visual_paths} 
-            Present each visual insight using simple labels (e.g., **Image 1**, **Image 2**), followed by a brief caption or description of what the image shows.  
-            **Do not** show any file paths or code — just cleanly formatted markdown with numbered image labels and bullet-pointed interpretations.
+    Do not include raw code or unnecessary text. Keep it professional and to the point.
+    """
+    )
 
-            Example format:
-
-            - **Image 1**: Distribution of Selling Price shows right-skewed data with high-value outliers.
-            - **Image 2**: Scatter plot of Selling Price vs Year reveals weak positive correlation.
-            - **Image 3**: Year-wise price trend highlights increased prices for newer models.
-
-            ---
-
-            ### 📑 Profiling Reports  
-            List the profiling HTML files and briefly mention what they reveal.
-
-            ---
-
-            ### ✅ Final Takeaway  
-            Give a 2–3 sentence summary of the main insight from the entire pipeline.
-
-            ---
-            DO NOT return any code, JSON, or repeat the user's question. Just return the markdown summary.
-            """
-            )
         chain = final_summary_prompt | self.llm | StrOutputParser()
+        inputs = {
+            "user_query": question,
+            "eda_result": str(eda_result),
+            "rca_result": str(rca_result),
+            "visual_plan": str(visual_plan),
+        }
 
-        response = chain.invoke({
-                "user_query": state["question"],
-                "eda_result": state["eda_result"],
-                "rca_result": state["rca_suggestion"],
-                "visual_paths": "\n".join(state.get("visual_images", [])),
-            })
-        return{"final_result":response}
+        response = chain.invoke(inputs)
+        return {"final_result": response}

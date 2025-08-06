@@ -13,7 +13,6 @@ from Data_Science_Agent.UserInterface.Sidebar import SidebarUI
 # --- Streamlit Page Setup ---
 st.set_page_config(
     page_title="Data Science Agent",
-    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -74,12 +73,6 @@ def load_app():
                 return
 
             # --- LLM Initialization ---
-            if llm_type == "Groq":
-                api_key = user_control_input.get("GROQ_API_KEY")
-                if not api_key:
-                    st.error("❌ GROQ API Key is missing.")
-                    return
-                llm_object = GroqLLM(user_contols_input=user_control_input)
 
             elif llm_type == "Google Gemini":
                 api_key = user_control_input.get("GOOGLE_API_KEY")

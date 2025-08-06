@@ -13,11 +13,12 @@ class PythonAnalystState(TypedDict):
     eda_code: str
     eda_result: str
     eda_recheck_suggestions : str
-    profiling_reports : str
+    profiling_report_url : str
 
     rca_suggestion: str
 
     visual_code: str
+    visual_plan : str
     visual_images: List[Union[str, dict]]  
     
     final_result: str  
