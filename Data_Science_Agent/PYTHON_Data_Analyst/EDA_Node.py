@@ -41,19 +41,52 @@ class EDA_Node:
 
     User question: "{user_query}"
 
-    Your job:
-    - Analyze the dataset and the user query.
-    - Output meaningful EDA steps to describe the data and address the question.
-    - Focus on key statistics, nulls, outliers, correlations, and unusual patterns.
+    Step-by-step Instructions:
 
-    Now generate a Python function:
-    - Name it: perform_eda(df)
-    - It must:
-        - Take a pandas DataFrame as input
-        - Contain all required imports (like pandas, numpy) for accurate and smooth code generations
-        - Return a dictionary named `eda_results`
-        - Avoid any visualizations or print statements
-    Wrap the full function in triple backticks using ```python
+1. **Understand the DataFrame**:
+    - Determine shape (rows x columns), data types, and column names.
+    - Return this structural metadata.
+
+2. **Descriptive Statistics**:
+    - Return `.describe()` statistics for numerical and categorical features separately.
+    - Include count, mean, std, min, 25%, 50%, 75%, max for numerics.
+    - Include unique count, top value, and frequency for categoricals.
+
+3. **Outlier Detection**:
+    - Use IQR method to detect number of outliers in each numerical column.
+    - Return count of outliers per column.
+
+4. **Cardinality & Categorical Insight**:
+    - For categorical columns: return number of unique values per column.
+    - Highlight high-cardinality columns (e.g., >50 unique values).
+
+5. **Correlation Analysis**:
+    - Return a dictionary of pairwise Pearson correlations between numerical columns.
+    - Only include absolute correlation values > 0.5 (strong correlations).
+
+6. **Data Quality Flags**:
+    - Check for:
+        - Constant columns (single unique value)
+        - Columns with mixed data types (if any)
+        - Columns with unusual patterns (like negative age, future dates, etc.)
+
+---
+
+🧠 Constraints:
+
+- Do **not** include any visualizations or plotting logic.
+- Do **not** print anything to the console.
+- You **must** return all outputs in a single dictionary called `eda_results` with clearly labeled keys.
+
+---
+
+🧪 Output Format:
+
+Generate a Python function named `perform_eda(df)` which:
+- Takes a pandas DataFrame `df` as input
+- Includes all necessary imports (pandas, numpy, etc.)
+- Returns a well-structured dictionary called `eda_results`
+- The function must be wrapped in triple backticks using ```python
     """,
             input_variables=["cleaned_data", "user_query"]
         )
