@@ -44,24 +44,46 @@ class Data_Cleaning_Node:
         sample_text = "\n\n".join(sample_parts) if sample_parts else ""
 
         unified_prompt = PromptTemplate(
-            template=(
-                "You are a data cleaning code generator. Produce EXACTLY one runnable Python function"
-                " wrapped in triple backticks with language `python`.\n\n"
-                "Requirements:\n"
-                "- Function signature: def clean_dataframe(df):\n"
-                "- Include necessary imports inside the function (must include import pandas as pd and import numpy as np if used).\n"
-                "- Implement default steps unless user disables them: drop cols >40% missing; impute numeric missing with mean; "
-                "impute categorical missing with mode; convert dtypes; remove duplicates; drop remaining missing rows; remove outliers with IQR.\n"
-                "- Also apply any column-specific steps implied by the user question.\n"
-                "- Use robust pandas idioms and return the cleaned DataFrame as `data_cleaned`.\n"
-                "- Do not output any text besides the code block.\n\n"
+            template=("""
+                        You are a professional data cleaning agent.
+
+        Your task is to generate a robust and accurate Python function named `clean_data(df)` that performs complete and strict data cleaning on a given pandas DataFrame `df`.
+        "Sample data:\n{sample_text}\n\n"
+        "User question:\n{user_question}"
+        At the beginning of the function, **import all required libraries**:
+        - `import pandas as pd`
+        - `import numpy as np`
+
+        Follow these exact cleaning steps:
+
+        1. **Drop all rows with any missing values** (NaNs).
+        2. **Remove all exact duplicate rows**.
+        3. **Standardize column names**:
+        - Convert all column names to lowercase.
+        - Strip leading/trailing spaces.
+        - Replace spaces and special characters with underscores.
+        4. **Convert column data types**:
+        - Convert columns to appropriate types (e.g., datetime, numeric).
+        - Skip conversion silently if not possible.
+        5. **Detect and handle outliers**:
+        - Use the IQR method to clip outliers in numerical columns.
+        6. **Clean string and categorical data**:
+        - Strip whitespace.
+        - Convert to lowercase.
+        - Remove special characters.
+        - Normalize inconsistent categorical values (e.g., 'Yes', 'YES', 'yes' → 'yes').
+        7. **Reset the index** after all cleaning steps.
+
+        Ensure the code is:
+        - Clean, readable, and efficient
+        - Accurate and production-grade
+        - Fully executable
+
                 "Output EXACT format:\n"
                 "```python\n"
                 "<function code>\n"
                 "```\n\n"
-                "Sample data:\n{sample_text}\n\n"
-                "User question:\n{user_question}"
-            ),
+            """),
             input_variables=["sample_text", "user_question"]
         )
 
@@ -141,66 +163,3 @@ class Data_Cleaning_Node:
         print("Cleaned")
         return {"cleaned_data": cleaned_dfs}
     
-
-    # def check_node(self, state: PythonAnalystState) -> dict:
-    #     prompt = PromptTemplate(
-    #         template="""
-    # You are a data cleaning validation agent.
-
-    # Your job is to analyze a given pandas DataFrame and verify whether it has been cleaned according to a list of suggestions or required data cleaning steps.
-
-    # You must evaluate whether the DataFrame satisfies all the following conditions (as applicable):
-    # - Columns with >40% missing values have been removed.
-    # - Missing numeric values imputed with mean.
-    # - Missing categorical values imputed with mode.
-    # - Appropriate column data types.
-    # - Duplicates removed.
-    # - Rows with missing values removed.
-    # - Outliers removed using 3x IQR.
-
-    # 🧾 **Cleaned Data (Markdown Table)**:
-    # {cleaned_data}
-
-    # ---
-
-    # 🎯 **Your Task**:
-    # Critically assess the cleaned data. Based on your analysis, answer the following:
-
-    # Return your response ONLY in the following exact JSON format and nothing else:
-
-    # ```json
-    # {{
-    # "is_clean": true,
-    # "missing_points": ["<Issue 1>", "<Issue 2>"],
-    # "reasoning": "One-line explanation."
-    # }}
-
-    # """,
-    #         input_variables=["cleaned_data"]
-    #     )
-    #     sample_parts = []
-    #     for i, df in enumerate(state["cleaned_data"]):
-    #         if isinstance(df, pd.DataFrame):
-    #             sample_df = dynamic_sample(df)
-    #             sample_parts.append(f"File {i + 1} Sample:\n{sample_df.to_string(index=False)}")
-    #     cleaned_table = "\n\n".join(sample_parts)
-
-    #     chain = prompt | self.llm | JsonOutputParser()
-    #     response = chain.invoke({
-    #         "cleaned_data": cleaned_table,
-    #     })
-        
-    #     if not isinstance(response, dict) or "is_clean" not in response:
-    #         raise ValueError("Invalid response format from cleaning validation")
-    #     print(response["is_clean"])
-    #     return {
-    #         "is_clean": response["is_clean"],
-    #         "cleaning_recheck_suggestions": response
-    #     }
-    
-
-    # def next_route(self, state: PythonAnalystState) -> str:
-    #     if "is_clean" not in state:
-    #         raise ValueError("Cleaning validation result not found in state")
-            
-    #     return "EDA_Analysis" if state["is_clean"] else "Clean_Code_Generator"
