@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+from datetime import datetime
 import re
 import logging
 from typing import Literal
@@ -28,157 +30,162 @@ class EDA_Node:
 
     def perform_eda_analysis(self, state: PythonAnalystState) -> dict:
         """Generates EDA Python function from cleaned data + user query."""
-        cleaned_data_sample = "\n\n".join([
-        f"File {i+1} Sample:\n{dynamic_sample(df).to_markdown(index=False)}"
-        for i, df in enumerate(state.get("cleaned_data", []))
-        if isinstance(df, pd.DataFrame)
-        ]) or "No cleaned data samples available."
+        # Build a safe, limited markdown sample for the prompt
+        samples = []
+        for i, df in enumerate(state.get("cleaned_data", []) or []):
+            if isinstance(df, pd.DataFrame):
+                try:
+                    md = dynamic_sample(df).to_markdown(index=False)
+                except Exception:
+                    # fallback to a small string if markdown fails
+                    md = dynamic_sample(df).head(10).to_string(index=False)
+                samples.append(f"File {i+1} Sample:\n{md}")
 
+        cleaned_data_sample = "\n\n".join(samples) or "No cleaned data samples available."
+
+        # Prompt template (fixed and with closed code fence)
         eda_prompt = PromptTemplate(
             template="""
-    You are a senior data analyst working on this dataset:
-    {cleaned_data}
+    You are a senior data analyst.
 
-    User question: "{user_query}"
+    CONTEXT (small representative sample in markdown):
+    {cleaned_data_sample}
 
-    Step-by-step Instructions:
+    User question:
+    "{user_query}"
 
-1. **Understand the DataFrame**:
-    - Determine shape (rows x columns), data types, and column names.
-    - Return this structural metadata.
+    Task:
+    Generate one compact, production-grade, fully-executable Python function named exactly `perform_eda(df)`.
 
-2. **Descriptive Statistics**:
-    - Return `.describe()` statistics for numerical and categorical features separately.
-    - Include count, mean, std, min, 25%, 50%, 75%, max for numerics.
-    - Include unique count, top value, and frequency for categoricals.
+    **Mandatory Requirements:**
+    1. At the start of the function include:
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime
 
-3. **Outlier Detection**:
-    - Use IQR method to detect number of outliers in each numerical column.
-    - Return count of outliers per column.
+    2. Never use deprecated NumPy aliases (`np.float`, `np.int`, `np.bool`, `np.object`).
+   - Use built-in `float`, `int`, `bool`, `object` or explicit `np.float64`/`np.int64` instead.
 
-4. **Cardinality & Categorical Insight**:
-    - For categorical columns: return number of unique values per column.
-    - Highlight high-cardinality columns (e.g., >50 unique values).
+    3. Input validation:.
 
-5. **Correlation Analysis**:
-    - Return a dictionary of pairwise Pearson correlations between numerical columns.
-    - Only include absolute correlation values > 0.5 (strong correlations).
+    3. Implement these EDA steps inside the function:
+    a. Dataset overview: shape, column names, dtypes.
+    b. Descriptive statistics (numeric only): count, mean, std, min, 25%, 50%, 75%, max.
+    c. Outlier detection using IQR: counts per numeric column.
+    d. Correlation analysis (numeric only): list pairs where abs(corr) > 0.5.
+    e. Data quality flags: constant columns, mixed-type columns, missing counts.
+    f. Suspicious values: negative ages, future dates, non-positive prices.
 
-6. **Data Quality Flags**:
-    - Check for:
-        - Constant columns (single unique value)
-        - Columns with mixed data types (if any)
-        - Columns with unusual patterns (like negative age, future dates, etc.)
+    4. Constraints:
+    - Use df.shape[0] and df.shape[1] for counts.
+    - Only return serializable Python types (dicts, lists, numbers, strings).
+    - Do NOT print, plot, or perform file I/O.
+    - Use only pandas/numpy/datetime operations.
 
----
+    OUTPUT:
+    Return a single dict named `eda_results` and nothing else. Wrap the function exactly in a fenced python block, for example:
 
-🧠 Constraints:
-
-- Do **not** include any visualizations or plotting logic.
-- Do **not** print anything to the console.
-- You **must** return all outputs in a single dictionary called `eda_results` with clearly labeled keys.
-
----
-
-🧪 Output Format:
-
-Generate a Python function named `perform_eda(df)` which:
-- Takes a pandas DataFrame `df` as input
-- Includes all necessary imports (pandas, numpy, etc.)
-- Returns a well-structured dictionary called `eda_results`
-- The function must be wrapped in triple backticks using ```python
+    ```python
+    def perform_eda(df):
+        ...
+        return eda_results
+    Do not include any text outside the fenced code block.
     """,
-            input_variables=["cleaned_data", "user_query"]
-        )
+        input_variables=["cleaned_data_sample", "user_query"],
+        )   
 
         chain = eda_prompt | self.llm | PythonOutputParser()
-
         code = chain.invoke({
-            "cleaned_data": cleaned_data_sample,
+            "cleaned_data_sample": cleaned_data_sample,
             "user_query": state.get("question", "")
         })
 
-        logger.info("EDA function generated")
+        code = code.strip()
+        if "def perform_eda" not in code:
+            raise ValueError("LLM did not produce a function named 'perform_eda'. Received:\n" + code[:1000])
+
+        logger.info("EDA function generated (length %d chars)", len(code))
         return {"eda_code": code}
 
     def execute_eda_code(self, state: PythonAnalystState) -> dict:
-        """Executes the generated EDA code on the raw data."""
+        """
+        Executes the generated EDA code on the raw data in `state`.
+
+        Expects:
+            - state["eda_code"]: Python code defining a function `perform_eda(df)` returning a dict.
+            - state["raw_data"]: List of pandas DataFrames.
+
+        Returns:
+            dict: {"eda_result": [<results or errors for each df>]}
+        """
         if "eda_code" not in state:
-            raise ValueError("Missing EDA code")
+            raise ValueError("Missing EDA code in state")
         if "raw_data" not in state:
-            raise ValueError("Missing raw data")
+            raise ValueError("Missing raw data in state")
 
+        eda_code = state["eda_code"]
+        raw_data = state["raw_data"]
         eda_outputs = []
-        code = state["eda_code"]
+        if not hasattr(np, "float"): np.float = float
+        if not hasattr(np, "int"): np.int = int
+        if not hasattr(np, "bool"): np.bool = bool
+        if not hasattr(np, "object"): np.object = object
 
-        for i, df in enumerate(state["raw_data"]):
+        # Optional: auto-replace old aliases in generated code
+        eda_code = (
+            eda_code.replace("np.float", "float")
+                    .replace("np.int", "int")
+                    .replace("np.bool", "bool")
+                    .replace("np.object", "object")
+    )
+
+        for i, df in enumerate(raw_data, start=1):
             if not isinstance(df, pd.DataFrame):
-                self.logger.warning("Item %d in raw_data is not a DataFrame, skipping...", i + 1)
+                self.logger.warning("Item %d in raw_data is not a DataFrame. Skipping...", i)
                 continue
+
             try:
-                local_vars = {"df": df.copy()}
-                exec(code, {"pd": pd}, local_vars)
-                eda_func = next((v for v in local_vars.values() if callable(v)), None)
-                if not eda_func:
-                    raise ValueError("No valid function found in generated code")
+                # Isolated environment for safe execution
+                global_env = {
+                    "pd": pd,
+                    "np": np,
+                    "datetime": datetime,
+                    "__builtins__": __builtins__,  # Allow built-ins
+                }
+                local_vars = {}
+
+                # Execute the provided EDA code
+                exec(eda_code, global_env, local_vars)
+
+                # Retrieve the EDA function
+                eda_func = local_vars.get("perform_eda")
+                if not callable(eda_func):
+                    raise ValueError("No callable function named 'perform_eda' found in the provided code")
+
+                # Execute the function with a copy of the DataFrame
                 result = eda_func(df.copy())
+
                 if not isinstance(result, dict):
-                    raise ValueError("EDA function must return a dictionary")
+                    raise ValueError("'perform_eda' must return a dictionary")
+
                 eda_outputs.append(result)
-                self.logger.info("Successfully executed EDA on DataFrame %d", i + 1)
+                self.logger.info("Successfully executed EDA on DataFrame %d", i)
+
+            except TypeError as te:
+                msg = str(te)
+                self.logger.error("Failed EDA on DataFrame %d: %s", i, msg)
+                hint = None
+                if "cannot be interpreted as an integer" in msg or "must be real number" in msg:
+                    hint = (
+                        "Likely cause: The EDA code used a DataFrame/Series where an integer was expected "
+                        "(e.g., `range(df)`, `for i in df`, or indexing with a DataFrame). "
+                        "Check the generated code for `range(` or integer-context usage of 'df'."
+                    )
+                eda_outputs.append({"error": msg, "hint": hint, "code": eda_code})
+
             except Exception as e:
-                self.logger.error("Failed EDA on DataFrame %d: %s", i + 1, str(e))
-                eda_outputs.append({"error": str(e)})
+                err_msg = str(e)
+                self.logger.error("Failed EDA on DataFrame %d: %s", i, err_msg)
+                eda_outputs.append({"error": err_msg, "code": eda_code})
 
         return {"eda_result": eda_outputs}
-    
-    # def eda_checking(self, state: PythonAnalystState) -> dict:
-    #     if "eda_result" not in state:
-    #         raise ValueError("EDA result not found in state")
-            
-    #     if "question" not in state:
-    #         raise ValueError("User question not found in state")
-            
-    #     prompt = PromptTemplate.from_template(template="""
-    #     You are a senior data analyst auditing this EDA result:
-    #     ---
-    #     📌 **User Question**: "{question}"
-    #     📊 **EDA Result**:
-    #     {eda_result}
-    #     ---
-    #     ✅ **Checklist**:
-    #     - Basic structure (rows, columns, dtypes)
-    #     - Nulls, outliers, and distributions
-    #     - Summary stats for numerics
-    #     - Top categories for categoricals
-    #     - Key correlations or trends
-    #     - Relevant to the user’s query
-    #     ---
-    #     🎯 **Task**:
-    #     Evaluate the EDA critically.
-    #     - Is it complete and useful?
-    #     - Does it help answer the user’s intent?
-    #     - What’s missing, if anything?
-    #     ---
-    #     🧾 **Output (JSON)**:
-    #     {{
-    #     "is_eda_valid": True / False (Give strictly Boolean value only),
-    #     "missing_points": ["...", "..."],
-    #     "reasoning": "Direct, sharp explanation (no fluff)."
-    #     }}
-    #     """,
-    #     input_variables=["question", "eda_result"])
-
-    #     chain = prompt | self.llm | JsonOutputParser()
-    #     response = chain.invoke({"eda_result":state["eda_result"],
-    #                              "question":state["question"]})
-    #     return {
-    #                 "is_eda_valid": response["is_eda_valid"],
-    #                 "eda_recheck_suggestions": response
-    #             }
-    
-    # def next_route(self, state: PythonAnalystState) -> str:
-    #     if "is_eda_valid" not in state:
-    #         raise ValueError("EDA validation result not found in state")
-            
-    #     return "rca_suggestions" if state["is_eda_valid"]EDA_Analysisestions"

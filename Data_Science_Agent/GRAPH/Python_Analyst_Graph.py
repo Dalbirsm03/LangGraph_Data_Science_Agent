@@ -24,21 +24,17 @@ class Graph_Builder:
 
         self.graph_builder.add_node("Clean_Code_Generator",self.obj.generate_cleaning_code)
         self.graph_builder.add_node("Cleaning_Code_Executor",self.obj.execute_cleaning_code)
-        # self.graph_builder.add_node("Cleaning_Check",self.obj.check_node)
 
         self.graph_builder.add_edge(START,"Clean_Code_Generator")
         self.graph_builder.add_edge("Clean_Code_Generator","Cleaning_Code_Executor")
         self.graph_builder.add_edge("Cleaning_Code_Executor","EDA_Analysis")
-        # self.graph_builder.add_conditional_edges("Cleaning_Check",self.obj.next_route,{True:"EDA_Analysis",False:"Clean_Code_Generator"})
 
         self.obj = EDA_Node(self.llm)
         self.graph_builder.add_node("EDA_Analysis",self.obj.perform_eda_analysis)
         self.graph_builder.add_node("EDA_Code_Executor",self.obj.execute_eda_code)
-        # self.graph_builder.add_node("EDA_Check",self.obj.eda_checking)
 
         self.graph_builder.add_edge("EDA_Analysis","EDA_Code_Executor")
         self.graph_builder.add_edge("EDA_Code_Executor","RCA_Node")
-        # self.graph_builder.add_conditional_edges("EDA_Check",self.obj.next_route,{True:"RCA_Node",False:"EDA_Analysis"})
 
         self.obj = RCA_Node(self.llm)
         self.graph_builder.add_node("RCA_Node",self.obj.rca_node)

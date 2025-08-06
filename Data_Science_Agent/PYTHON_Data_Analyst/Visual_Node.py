@@ -1,221 +1,197 @@
-import re
-import os
-import sys
-import uuid
-import tempfile
-import hashlib
-import logging
-from typing import List, Any, Dict, Union
-
-import pandas as pd
-import matplotlib
-import matplotlib.pyplot as plt
-
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
-
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser, BaseOutputParser,JsonOutputParser
+import re
+import pandas as pd
+import matplotlib.pyplot as plt
+import tempfile
+import os
+import uuid
+import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def _simple_sns_palette_sanitizer(code: str, default_color: str = "C0") -> str:
-    """
-    Naive sanitizer: replace sns.*plot(..., palette=...) with color='<default_color>'
-    if 'hue' is not present. Ensures color value is quoted.
-    """
-    # pattern: sns.<word>( ..., palette=..., ... )
-    pattern = r"(sns\.\w+\s*\([^)]*?)palette\s*=\s*([^,)\n]+)([,)\n])"
-    def repl(match):
-        before = match.group(1)
-        # ensure quoted color string
-        quoted = f"'{default_color}'" if not (default_color.startswith("'") or default_color.startswith('"')) else default_color
-        return f"{before}color={quoted}{match.group(3)}"
-    try:
-        new_code = re.sub(pattern, repl, code, flags=re.S)
-        return new_code
-    except Exception:
-        return code
-
+class PythonOutputParser(BaseOutputParser):
+    """Parser for extracting Python code from markdown code blocks."""
+    
+    def parse(self, text: str) -> str:
+        match = re.search(r"```python(.*?)```", text, re.DOTALL)
+        return match.group(1).strip() if match else text
+    
 class Visual_Node:
+    """Node for handling data visualization tasks."""
+    
     def __init__(self, llm) -> None:
         self.llm = llm
 
     def generate_visual_code(self, state: PythonAnalystState) -> dict:
-        """
-        Single LLM call -> returns:
-          - visual_code: str (no backticks)
-          - visual_code_sha1: str
-          - visual_plan: str (empty here)
-        """
-        logger.info("ENTER: generate_visual_code node — state keys: %s", list(state.keys()))
-        if "cleaned_data" not in state or not state["cleaned_data"]:
-            raise ValueError("cleaned_data not found or empty in state")
-        if "question" not in state or not state["question"]:
-            raise ValueError("question not found or empty in state")
+        if not state.get("cleaned_data") or not state.get("question"):
+            raise ValueError("Missing cleaned_data or question")
 
+        # Convert cleaned_data to readable column summary
         column_summary = "\n".join(
-            [f"Table {i+1}: {', '.join(df.columns)}" for i, df in enumerate(state["cleaned_data"]) if isinstance(df, pd.DataFrame)]
+            [f"Table {i+1}: {', '.join(map(str, df.columns))}"
+            for i, df in enumerate(state["cleaned_data"]) if isinstance(df, pd.DataFrame)]
         )
 
-        unified_prompt = PromptTemplate(
-            template=(
-                "You are an expert data visualization engineer.\n\n"
-                "Produce EXACTLY one runnable Python function wrapped in a python code block and nothing else.\n\n"
-                "Function signature must be: def generate_visualizations(df):\n"
-                "Place all imports inside the function (pandas, numpy, matplotlib.pyplot as plt). If using seaborn, import seaborn as sns.\n"
-                "If you use seaborn `palette=...`, you MUST also include `hue=<column>`. If no hue is needed, use `color='<single-color>'` instead of `palette`.\n"
-                "Implement 2-3 purpose-built visuals that directly answer the user's question using only df contents (no hardcoded values).\n"
-                "Include titles and axis labels. Call plt.show() after each chart. Do not print or return anything.\n\n"
-                "Output EXACT format:\n"
-                "```python\n"
-                "def generate_visualizations(df):\n"
-                "    <code>\n"
-                "```\n\n"
-                "Inputs:\n"
-                "- cleaned_data_columns:\n{column_summary}\n"
-                "- user_question:\n{user_question}\n"
-                "- eda_summary:\n{eda_result}\n"
-                "- rca_summary:\n{rca_result}\n"
-            ),
-            input_variables=["column_summary", "user_question", "eda_result", "rca_result"]
+        # Step 1: Suggest visualizations
+        suggestion_prompt = PromptTemplate(
+            template="""
+    You are an elite data visualization strategist. Your task is to design only the most critical visualizations to help answer the user’s original question.
+    ---
+    ### 🎯 Objective:
+    Extract **2 to 3 visualizations** that expose patterns, trends, or anomalies directly tied to the user's query.  
+    No fluff. Only purpose-built visuals that add analytical clarity.
+    ---
+    ### 📥 Inputs:
+    - 🧼 Cleaned Data Sample (columns):  
+    {cleaned_data}
+    - ❓ User Query:  
+    "{user_query}"
+    - 📊 EDA Summary:  
+    {eda_result}
+    - 🧠 RCA Summary:  
+    {rca_result}
+    ---
+    ### 📤 Output Instructions:
+    For **each visualization**, provide only:
+    1. **Chart Title** – Insight-driven
+    2. **Chart Type** – (bar, line, boxplot, heatmap, histogram, etc.)
+    3. **X-Axis** – Column or logic
+    4. **Y-Axis** – Column or logic
+    ---
+    ### 📝 Output Format:
+    ### 📈 Suggested Visualizations:
+    #### 1. [Chart Title]  
+    - **Type**: ...  
+    - **X**: ...  
+    - **Y**: ...  
+    #### 2. [Chart Title]  
+    - **Type**: ...  
+    - **X**: ...  
+    - **Y**: ...  
+    [Max: 3 visuals]
+    ---
+    ### ⚠ Rules:
+    - DO NOT write code or explain.
+    - Every chart must directly help answer the user’s query.
+    - Base visuals strictly on the EDA and RCA findings.
+    """,
+            input_variables=["user_query", "cleaned_data", "eda_result", "rca_result"]
         )
 
-        eda = state.get("eda_result", "")
-        rca = state.get("rca_suggestion", "")
-
-        chain = unified_prompt | self.llm | StrOutputParser()
-        raw = chain.invoke({
-            "column_summary": column_summary,
-            "user_question": state["question"],
-            "eda_result": eda,
-            "rca_result": rca
+        suggestion_chain = suggestion_prompt | self.llm | StrOutputParser()
+        visual_plan = suggestion_chain.invoke({
+            "user_query": state["question"],
+            "eda_result": state.get("eda_result", ""),
+            "rca_result": state.get("rca_suggestion", ""),
+            "cleaned_data": column_summary
         })
 
-        # extract code block
-        code_match = re.search(r"```python\s*(.*?)\s*```", raw, flags=re.S | re.I)
-        if code_match:
-            visual_code = code_match.group(1).strip()
-        else:
-            stripped = raw.strip()
-            if stripped.startswith("def"):
-                visual_code = stripped
-            else:
-                logger.error("Failed to extract python code block from LLM response. Raw start: %r", raw[:300])
-                raise ValueError("Failed to extract python code block from LLM response")
+        code_prompt = PromptTemplate(
+            template="""
+    You are a Python visualization engineer.
 
-        sha = hashlib.sha1(visual_code.encode("utf-8")).hexdigest()[:8]
-        logger.info("EXIT: generate_visual_code — produced visual_code len=%d sha1=%s", len(visual_code), sha)
+    Your job is to generate clean, executable Python code for the approved visualizations.
+    ---
+    ### 📦 Input:
+    Below is the list of charts you must implement:
+    {visual_suggestion}
+    ---
+    ### 🛠 Instructions:
+    - Create a single function: `generate_visualizations(df)`
+    - Place all imports inside the function
+    - Implement each visualization exactly as specified
+    - Add descriptive titles and axis labels
+    - Call `plt.show()` (or `fig.show()` for Plotly) after each chart
+    ---
+    ### ⚠ Rules:
+    - No print(), return(), placeholders, markdown, or explanations
+    - No hardcoded values — use only df columns
+    - Code must run immediately
+    ---
+    ### 📤 Output Format:
+    ```python
+    def generate_visualizations(df):
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import seaborn as sns
 
-        # return code and metadata
-        return {"visual_plan": "", "visual_code": visual_code, "visual_code_sha1": sha}
+        # Chart 1
+        ...
+        plt.show()
 
+        # Chart 2
+        ...
+        plt.show()
+
+        # Chart N (if applicable)
+        ...
+        plt.show()
+    """,
+    input_variables=["visual_suggestion"]
+    )
+
+        code_chain = code_prompt | self.llm | PythonOutputParser()
+        visual_code = code_chain.invoke({"visual_suggestion": visual_plan})
+
+        return {"visual_code": visual_code}
+    
     def execute_visual_code(self, state: PythonAnalystState) -> dict:
-        """
-        Execute the generated `generate_visualizations(df)` and save images.
-        Returns:
-          {
-            "visual_code": str,
-            "visual_images": List[Union[{"table":n,"path":...}, {"table":n,"error":...}]],
-          }
-        """
-        logger.info("ENTER: execute_visual_code node — state keys: %s", list(state.keys()))
-        try:
-            matplotlib.use("Agg")
-        except Exception:
-            pass
-
         code = state.get("visual_code")
         if not code:
-            logger.error("No visualization code found in state")
             raise ValueError("No visualization code found in state")
-
-        # sanitize (ensures quoted color)
-        code = _simple_sns_palette_sanitizer(code)
-
+            
         cleaned_dfs = state.get("cleaned_data", [])
         if not cleaned_dfs:
             raise ValueError("No cleaned data found in state")
-
-        image_paths: List[Union[Dict[str, Any], str]] = []
-
-        sys.modules.setdefault("matplotlib", matplotlib)
-        sys.modules.setdefault("matplotlib.pyplot", plt)
+            
+        image_paths = []
 
         for idx, df in enumerate(cleaned_dfs):
-            table_id = idx + 1
             if not isinstance(df, pd.DataFrame):
-                logger.warning("Item %s in cleaned_data is not a DataFrame. Skipping.", table_id)
-                image_paths.append({"table": table_id, "error": "not a DataFrame"})
+                logger.warning("Item %(idx)s in cleaned_data is not a DataFrame. Skipping.", 
+                             {"idx": idx + 1})
                 continue
 
-            exec_globals: Dict[str, Any] = {"__name__": f"visual_exec_{table_id}", "matplotlib": matplotlib}
-            exec_globals["matplotlib.pyplot"] = plt
-            exec_locals: Dict[str, Any] = {}
+            local_vars = {"df": df.copy()}
+            original_show = plt.show
 
-            def save_and_track(*args, **kwargs):
+            def save_and_track():
+                """Save current plot to a temporary file and track its path."""
                 try:
                     temp_file = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.png")
                     plt.savefig(temp_file, bbox_inches="tight", dpi=300)
                     plt.close("all")
+                    
+                    # Verify the file was created successfully
                     if not os.path.exists(temp_file):
                         raise IOError("Failed to create image file")
-                    image_paths.append({"table": table_id, "path": temp_file})
-                    logger.info("Saved visualization to %s", temp_file)
+                        
+                    image_paths.append(temp_file)
+                    logger.info("Successfully saved visualization to %(path)s", {"path": temp_file})
+                    
+                except (IOError, ValueError) as e:
+                    logger.error("Failed to save image: %(error)s", {"error": str(e)})
+                    image_paths.append({"error": f"Failed to save image: {str(e)}"})
                 except Exception as e:
-                    logger.error("Failed to save image for table %s: %s", table_id, str(e))
-                    image_paths.append({"table": table_id, "error": str(e)})
+                    logger.error("Unexpected error while saving image: %(error)s", {"error": str(e)})
+                    image_paths.append({"error": f"Unexpected error: {str(e)}"})
 
-            original_show = getattr(plt, "show", None)
             try:
-                exec(code, exec_globals, exec_locals)
-
-                # find function
-                generate_func = None
-                if "generate_visualizations" in exec_locals:
-                    generate_func = exec_locals["generate_visualizations"]
-                elif "generate_visualizations" in exec_globals:
-                    generate_func = exec_globals["generate_visualizations"]
-                else:
-                    for val in list(exec_locals.values()) + list(exec_globals.values()):
-                        if callable(val):
-                            generate_func = val
-                            break
-
+                exec(code, {}, local_vars)
+                generate_func = next((val for val in local_vars.values() if callable(val)), None)
                 if generate_func is None:
-                    raise ValueError("No callable visualization function found in generated code.")
+                    raise ValueError("No function found in generated code.")
 
+                # Patch show to save plots
                 plt.show = save_and_track
-                generate_func(df.copy())
-
-                # save any leftover figures if user didn't call plt.show
-                try:
-                    if plt.get_fignums():
-                        save_and_track()
-                except Exception:
-                    pass
+                generate_func(df)
 
             except Exception as e:
-                logger.error("Error executing visualization on DataFrame %d: %s", table_id, str(e))
-                image_paths.append({"table": table_id, "error": str(e)})
+                logger.error(f"Error executing visualization on DataFrame {idx + 1}: {e}")
+                image_paths.append({"error": str(e)})
             finally:
-                if original_show is not None:
-                    plt.show = original_show
-                else:
-                    if hasattr(plt, "show"):
-                        try:
-                            delattr(plt, "show")
-                        except Exception:
-                            pass
+                plt.show = original_show
 
-        is_ok = all(("path" in item and os.path.exists(item["path"]) ) for item in image_paths if isinstance(item, dict))
-        visual_images_normalized: List[Union[str, Dict[str, str]]] = []
-        for it in image_paths:
-            if isinstance(it, dict) and "path" in it:
-                visual_images_normalized.append(it["path"])
-            else:
-                visual_images_normalized.append(it)
-
-        return { 
-            "visual_code": code,
-            "visual_images": visual_images_normalized,
-        }
+        return {"visual_images": image_paths}
