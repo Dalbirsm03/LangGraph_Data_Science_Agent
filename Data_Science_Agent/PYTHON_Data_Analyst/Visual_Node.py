@@ -4,6 +4,9 @@ from langchain_core.output_parsers import StrOutputParser, BaseOutputParser,Json
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
+from typing import List, Dict, Any
+import sys
+import matplotlib
 import tempfile
 import os
 import uuid
@@ -18,6 +21,32 @@ class PythonOutputParser(BaseOutputParser):
         match = re.search(r"```python(.*?)```", text, re.DOTALL)
         return match.group(1).strip() if match else text
     
+def fix_palette_deprecation(code: str, default_color: str = "C0") -> str:
+    """
+    Fix Seaborn 'palette without hue' deprecation:
+      - If x='col' present and hue not present, add hue=x and legend=False (keep palette).
+      - Otherwise replace palette=... with color='<default_color>'.
+    """
+    pattern = r"(sns\.\w+\([^)]*?)palette\s*=\s*([^,)\n]+)([,)\n]?)"
+
+    def repl(m):
+        before, palette, trailing = m.groups()
+        # find x='col' or x="col" inside the call prefix
+        x_match = re.search(r"\bx\s*=\s*['\"]([^'\"]+)['\"]", before)
+        if x_match and "hue=" not in before:
+            col = x_match.group(1)
+            trailing = trailing or ""
+            return f"{before}hue='{col}', legend=False, palette={palette}{trailing}"
+        # fallback: use single color
+        quoted = f"'{default_color}'" if not (default_color.startswith("'") or default_color.startswith('"')) else default_color
+        trailing = trailing or ""
+        return f"{before}color={quoted}{trailing}"
+
+    try:
+        return re.sub(pattern, repl, code, flags=re.S)
+    except Exception:
+        return code
+
 class Visual_Node:
     """Node for handling data visualization tasks."""
     
@@ -146,8 +175,16 @@ class Visual_Node:
         if not cleaned_dfs:
             raise ValueError("No cleaned data found in state")
             
-        image_paths = []
+        try:
+            matplotlib.use("Agg")
+        except Exception:
+            pass
 
+        code = fix_palette_deprecation(code)
+
+        image_paths: List[Dict[str, Any]] = []
+        sys.modules.setdefault("matplotlib", matplotlib)
+        sys.modules.setdefault("matplotlib.pyplot", plt)
         for idx, df in enumerate(cleaned_dfs):
             if not isinstance(df, pd.DataFrame):
                 logger.warning("Item %(idx)s in cleaned_data is not a DataFrame. Skipping.", 
