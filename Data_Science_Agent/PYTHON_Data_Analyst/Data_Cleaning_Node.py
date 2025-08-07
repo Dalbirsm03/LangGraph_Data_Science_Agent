@@ -1,10 +1,14 @@
 from Data_Science_Agent.STATE.Python_Analyst_State import PythonAnalystState
 from langchain_core.prompts import PromptTemplate
+from pydantic import BaseModel, Field
+from typing import Literal
 from langchain_core.output_parsers import BaseOutputParser
 import re
 import pandas as pd
 from typing import List
 import logging
+import logging
+logger = logging.getLogger(__name__)
 
 def dynamic_sample(df: pd.DataFrame, random_state: int = 42) -> pd.DataFrame:
     n = len(df)
@@ -22,6 +26,11 @@ def dynamic_sample(df: pd.DataFrame, random_state: int = 42) -> pd.DataFrame:
         frac = 0.01
     return df.sample(frac=frac, random_state=random_state)
 
+class Routes(BaseModel):
+    route : Literal["Valid","Reject"] = Field(description="Return 'Valid' if the data is cleaned, else return 'Reject' to regenerate it.")
+
+
+
 class PythonOutputParser(BaseOutputParser):
     def parse(self, text: str):
         match = re.search(r"```python(.*?)```", text, re.DOTALL)
@@ -31,6 +40,7 @@ class Data_Cleaning_Node:
     def __init__(self, llm):
         self.llm = llm
         self.logger = logging.getLogger(__name__)
+        self.router = llm.with_structured_output(Routes)
 
     def generate_cleaning_code(self, state: PythonAnalystState) -> dict:
         if "raw_data" not in state or not state["raw_data"]:
@@ -136,22 +146,13 @@ class Data_Cleaning_Node:
                 continue
 
             try:
-                # Work on a copy so the original df is untouched
                 df_copy = df.copy()
-
-                # --- DTYPE SAFETY: detect integer-like columns and cast to float64 ---
-                # Cover pandas nullable Int types and numpy int kinds
                 int_cols = []
                 try:
-                    # pandas nullable Int64 dtype detection
                     nullable_ints = df_copy.select_dtypes(include=[pd.Int64Dtype()]).columns.tolist()
                 except Exception:
                     nullable_ints = []
-
-                # numpy/pandas standard integer dtypes
                 numpy_ints = df_copy.select_dtypes(include=[np.integer, "int64", "int32", "int16", "int8", "uint64", "uint32"]).columns.tolist()
-
-                # combine unique columns
                 for c in (nullable_ints + numpy_ints):
                     if c not in int_cols:
                         int_cols.append(c)
@@ -159,14 +160,12 @@ class Data_Cleaning_Node:
                 if int_cols:
                     logger.info("Casting integer-like columns to float64 before running cleaning function: %s", int_cols)
                     try:
-                        # suppress possible warnings about downcasting etc.
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore", category=FutureWarning)
                             df_copy[int_cols] = df_copy[int_cols].astype("float64")
                     except Exception as cast_exc:
                         logger.warning("Casting int->float failed for columns %s: %s", int_cols, cast_exc)
 
-                # Call the cleaning function on the dtype-safe copy
                 cleaned = cleaning_func(df_copy)
 
                 if not isinstance(cleaned, pd.DataFrame):
@@ -181,3 +180,33 @@ class Data_Cleaning_Node:
                 cleaned_dfs.append(df)
 
         return {"cleaned_data": cleaned_dfs}
+    
+    def check(self,state:PythonAnalystState):
+        cleaned_preview = []
+        for i, df in enumerate(state.get("cleaned_data", []), start=1):
+            if isinstance(df, pd.DataFrame):
+                preview = dynamic_sample(df).to_string(index=False)
+                cleaned_preview.append(f"Table {i}:\n{preview}")
+        cleaned_summary = "\n\n".join(cleaned_preview)
+        prompt = PromptTemplate(template=("You are a data quality inspector.\n\n"
+        "Given this cleaned data: {cleaned_data}\n\n"
+        "Determine whether it is properly cleaned.\n"
+        "Return only one of the following:\n"
+        "- 'Valid' if the data looks clean\n"
+        "- 'Reject' if it still looks dirty and needs cleaning again."),
+                                input_variables=["cleaned_data"])
+        chain = prompt | self.router
+        response = chain.invoke({"cleaned_data":cleaned_summary})
+        return {"cleaned_or_not":response.route}
+    
+    def next_route(self, state: PythonAnalystState):
+        logger.info(f"[Routing Decision] Cleaned status = {state['cleaned_or_not']}")
+                    
+        if state["cleaned_or_not"] == "Valid":
+            return "Valid"
+        else:
+            return "Reject"
+        
+
+
+

@@ -19,3 +19,4 @@ seaborn
 ydata-profiling
 setuptools
 tabulate
+graphviz

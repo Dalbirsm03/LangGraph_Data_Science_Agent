@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 import streamlit as st
 import pandas as pd
 from langsmith import Client
+from streamlit.components.v1 import html
 
 from Data_Science_Agent.LLM.gemini import GeminiLLM
 from Data_Science_Agent.LLM.groq import GroqLLM
@@ -16,6 +17,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 def load_app():
     # --- Optional LangSmith Setup ---
@@ -98,6 +100,7 @@ def load_app():
                     # --- Run the Graph ---
                     graph_builder = Graph_Builder(llm)
                     graph = graph_builder.setup_graph(usecase)
+                    
                     DisplayResultStreamlit(usecase, graph, user_message, dataframes).display_result_on_ui()
                 except Exception as e:
                     st.error("❌ Error in analysis pipeline.")
