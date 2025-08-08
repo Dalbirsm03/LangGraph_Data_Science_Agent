@@ -58,8 +58,6 @@ def load_app():
                     continue
 
                 st.success(f"✅ Loaded: {file.name} — Shape: {df.shape}")
-                st.dataframe(df.head(), use_container_width=True)
-
                 dataframes.append(df)
 
             except Exception as e:

@@ -81,7 +81,7 @@ class Visual_Node:
     ### Output Instructions:
     For **1 visualization**, provide:
     1. **Chart Title**
-    2. **Chart Type** – (bar, line, heatmap, histogram, etc.)
+    2. **Chart Type** – (bar, line, scatter etc.)
     3. **X-Axis**
     4. **Y-Axis**
     5. **Short Description** – in plain English, explain what the chart will show.
